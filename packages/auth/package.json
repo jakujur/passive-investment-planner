@@ -1,0 +1,23 @@
+{
+  "name": "@pip/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/auth.ts"
+  },
+  "scripts": {
+    "auth:generate": "auth generate --config src/auth.ts --adapter drizzle --dialect postgresql --output ../db/src/schema/auth.ts --yes",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@pip/db": "workspace:*",
+    "better-auth": "1.7.7",
+    "drizzle-orm": "0.45.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "auth": "1.7.7",
+    "typescript": "7.0.2"
+  }
+}

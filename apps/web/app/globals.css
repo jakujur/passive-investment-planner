@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-class-equity: var(--class-equity);
+  --color-class-bonds: var(--class-bonds);
+  --color-class-real-estate: var(--class-real-estate);
+  --color-class-gold: var(--class-gold);
+  --color-class-cushion: var(--class-cushion);
+  --shadow-card: var(--shadow-card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(0.975 0.006 85);
+  --foreground: oklch(0.21 0.015 60);
+  --card: oklch(0.992 0.004 85);
+  --card-foreground: oklch(0.21 0.015 60);
+  --popover: oklch(0.992 0.004 85);
+  --popover-foreground: oklch(0.21 0.015 60);
+  --primary: oklch(0.42 0.085 160);
+  --primary-foreground: oklch(0.985 0.004 85);
+  --secondary: oklch(0.93 0.01 80);
+  --secondary-foreground: oklch(0.21 0.015 60);
+  --muted: oklch(0.945 0.008 80);
+  --muted-foreground: oklch(0.49 0.02 65);
+  --accent: oklch(0.95 0.02 160);
+  --accent-foreground: oklch(0.3 0.07 160);
+  --destructive: oklch(0.52 0.19 28);
+  --warning: oklch(0.6 0.13 70);
+  --border: oklch(0.875 0.012 80);
+  --input: oklch(0.875 0.012 80);
+  --ring: oklch(0.55 0.09 160);
+  --class-equity: oklch(0.55 0.11 165);
+  --class-bonds: oklch(0.52 0.08 250);
+  --class-real-estate: oklch(0.62 0.13 40);
+  --class-gold: oklch(0.74 0.13 85);
+  --class-cushion: oklch(0.6 0.02 65);
+  --chart-1: var(--class-equity);
+  --chart-2: var(--class-bonds);
+  --chart-3: var(--class-real-estate);
+  --chart-4: var(--class-gold);
+  --chart-5: var(--class-cushion);
+  --shadow-card: 0 1px 0 0 oklch(0.21 0.015 60 / 4%), 0 12px 32px -20px oklch(0.21 0.015 60 / 30%);
+  --radius: 0rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+  .font-heading {
+    font-variation-settings: "SOFT" 30;
+  }
+}
+
+/* Unlayered on purpose: it must win over Tailwind's layered utilities without !important. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}
+
+@utility atmosphere {
+  background-image: radial-gradient(
+    120% 360px at 50% -40px,
+    color-mix(in oklch, var(--primary) 12%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
+}
+
+@utility hatched {
+  background-image: repeating-linear-gradient(-45deg, var(--border) 0 1px, transparent 1px 6px);
+}

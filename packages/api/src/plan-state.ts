@@ -16,12 +16,14 @@ import {
   wrapperFamily,
 } from "@pip/engine";
 import { type Currency, maxBig, RATE_SCALE, sumBig, toBase } from "@pip/money";
+import { ensureFreshMarketData } from "@pip/sources";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { BOND_NOMINAL_MINOR } from "./bonds";
 import { loadQuotes, priceInBaseAt } from "./market";
 import { today } from "./time";
 
-export const BOND_NOMINAL_MINOR = 10_000n;
+export { BOND_NOMINAL_MINOR } from "./bonds";
 
 export interface AccountLabel {
   name: string;
@@ -54,6 +56,9 @@ export interface PlanContext {
     })[];
     limits: {
       accountId: string;
+      accountName: string;
+      assetKind: ClassState["kind"] | null;
+      ikzeEntrepreneur: boolean;
       personName: string;
       family: WrapperFamily;
       limitMinor: bigint;
@@ -97,6 +102,7 @@ export async function loadPlanContext(
 ): Promise<PlanContext> {
   const year = Number(month.slice(0, 4));
   const date = today();
+  await ensureFreshMarketData(db);
   const [settings] = await db
     .select()
     .from(schema.settings)
@@ -146,7 +152,6 @@ export async function loadPlanContext(
   const quoteIds = new Set(purchases.map((p) => p.instrumentId));
   for (const { cls } of classRows) {
     if (cls.purchaseInstrumentId) quoteIds.add(cls.purchaseInstrumentId);
-    if (cls.benchmarkInstrumentId) quoteIds.add(cls.benchmarkInstrumentId);
   }
   const quotes = await loadQuotes(db, [...quoteIds]);
   const valueByKind = new Map<string, bigint>();
@@ -177,12 +182,17 @@ export async function loadPlanContext(
   const accounts: AccountState[] = accountRows.map(({ account, person }) => {
     const family = wrapperFamily(account.wrapper);
     let remainingLimitMinor: bigint | null = null;
+    let yearlyLimitMinor: bigint | null = null;
     if (family) {
-      const limitMinor = annualLimitMinor(family, person.isEntrepreneur, limits);
+      const limitMinor = annualLimitMinor(family, account.ikzeEntrepreneur, limits);
+      yearlyLimitMinor = limitMinor;
       const usedMinor = contributedThisYear.get(account.id) ?? 0n;
       remainingLimitMinor = maxBig(0n, limitMinor - usedMinor);
       summaryLimits.push({
         accountId: account.id,
+        accountName: account.name,
+        assetKind: account.assetKind,
+        ikzeEntrepreneur: account.ikzeEntrepreneur,
         personName: person.name,
         family,
         limitMinor,
@@ -195,6 +205,7 @@ export async function loadPlanContext(
       currency: account.currency,
       fxRate: rateFor(account.currency),
       remainingLimitMinor,
+      annualLimitMinor: yearlyLimitMinor,
     };
   });
 
@@ -232,8 +243,8 @@ export async function loadPlanContext(
             : (priceInBaseAt(quotes.get(instrument.id), date)?.priceMinor ?? null),
       };
     }
-    if (cls.kind === "EQUITY" && cls.benchmarkInstrumentId) {
-      equityDrawdownBp = drawdownBp(quotes.get(cls.benchmarkInstrumentId)?.prices ?? []);
+    if (cls.kind === "EQUITY" && cls.purchaseInstrumentId) {
+      equityDrawdownBp = drawdownBp(quotes.get(cls.purchaseInstrumentId)?.prices ?? []);
     }
     classes.push({
       id: cls.id,
@@ -306,6 +317,7 @@ export async function loadPlanContext(
     equityDrawdownBp,
     acceleratorTable: settings.acceleratorTable,
     etfRounding: settings.etfRounding,
+    accountFill: settings.accountFill,
     alertMonthsThreshold: settings.alertMonthsThreshold,
   };
 

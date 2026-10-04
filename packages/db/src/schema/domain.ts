@@ -38,11 +38,24 @@ export const wrapper = pgEnum("wrapper", [
 export const assetKind = pgEnum("asset_kind", ["EQUITY", "BONDS", "REAL_ESTATE", "GOLD"]);
 export const instrumentType = pgEnum("instrument_type", ["ETF", "BOND", "GOLD"]);
 export const transactionType = pgEnum("transaction_type", ["BUY", "DEPOSIT", "FEE", "INTEREST"]);
-export const transactionSource = pgEnum("transaction_source", ["MANUAL", "IMPORT", "PLAN"]);
+export const transactionSource = pgEnum("transaction_source", [
+  "MANUAL",
+  "IMPORT",
+  "PLAN",
+  "OPENING",
+]);
 export const propertyUsage = pgEnum("property_usage", ["OWN", "RENTAL"]);
 export const goalStatus = pgEnum("goal_status", ["ACTIVE", "DONE"]);
 export const planStatus = pgEnum("plan_status", ["DRAFT", "DONE"]);
 export const etfRounding = pgEnum("etf_rounding", ["WHOLE", "FRACTIONAL"]);
+export const accountFill = pgEnum("account_fill", ["EVEN", "SEQUENTIAL"]);
+export const installmentType = pgEnum("installment_type", ["EQUAL", "DECREASING"]);
+export const overpaymentMode = pgEnum("overpayment_mode", ["SHORTEN", "LOWER_INSTALLMENT"]);
+export const mortgageEntryKind = pgEnum("mortgage_entry_kind", [
+  "BANK",
+  "INSTALLMENT",
+  "OVERPAYMENT",
+]);
 export const snapshotStatus = pgEnum("snapshot_status", ["OK", "PENDING_REVIEW", "MANUAL"]);
 
 // ── Household & access ────────────────────────────────────────────────────────
@@ -91,7 +104,6 @@ export const person = pgTable("person", {
     .references(() => household.id, { onDelete: "cascade" }),
   userId: text().references(() => user.id, { onDelete: "set null" }),
   name: text().notNull(),
-  isEntrepreneur: boolean().notNull().default(false),
   createdAt: createdAt(),
 });
 
@@ -121,7 +133,6 @@ export const assetClass = pgTable(
     targetWeightBp: integer().notNull(),
     bandAbsBp: integer(),
     bandRelBp: integer(),
-    benchmarkInstrumentId: uuid().references(() => instrument.id),
     purchaseInstrumentId: uuid().references(() => instrument.id),
     /** Ordered account ids filled up to their limits, the last one should have no limit. */
     accountQueue: uuid().array().notNull().default(sql`'{}'::uuid[]`),
@@ -147,6 +158,10 @@ export const account = pgTable(
       sql`case when wrapper in ('IKE', 'IKE_OBLIGACJE') then 'IKE' when wrapper in ('IKZE', 'IKZE_OBLIGACJE') then 'IKZE' end`,
     ),
     currency: text().$type<Currency>().notNull(),
+    /** The asset class this account serves; `null` for cash (cushion, down-payment goals). */
+    assetKind: assetKind(),
+    /** IKZE of a person running a business has the higher limit. */
+    ikzeEntrepreneur: boolean().notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -210,6 +225,7 @@ export const property = pgTable("property", {
   includeInRebalancing: boolean().notNull().default(false),
 });
 
+/** Terms plus the current state, which is a cache of the latest `mortgage_entry`. */
 export const mortgage = pgTable("mortgage", {
   id: id(),
   propertyId: uuid()
@@ -219,7 +235,43 @@ export const mortgage = pgTable("mortgage", {
   balanceMinor: minor().notNull(),
   rateBp: integer().notNull(),
   installmentMinor: minor().notNull(),
+  installmentType: installmentType().notNull().default("EQUAL"),
+  overpaymentMode: overpaymentMode().notNull().default("SHORTEN"),
+  /** `YYYY-MM` of the last installment. */
+  endMonth: text(),
 });
+
+/**
+ * Mortgage history and source of truth: BANK = state typed from the bank (after that month's
+ * installment), INSTALLMENT / OVERPAYMENT = written when a month is booked.
+ */
+export const mortgageEntry = pgTable(
+  "mortgage_entry",
+  {
+    id: id(),
+    mortgageId: uuid()
+      .notNull()
+      .references(() => mortgage.id, { onDelete: "cascade" }),
+    planId: uuid().references(() => plan.id, { onDelete: "cascade" }),
+    kind: mortgageEntryKind().notNull(),
+    date: date().notNull(),
+    /** Installment or overpayment paid; null for BANK. */
+    amountMinor: minor(),
+    principalMinor: minor(),
+    interestMinor: minor(),
+    /** Future interest no longer owed thanks to an overpayment. */
+    interestSavedMinor: minor(),
+    balanceAfterMinor: minor().notNull(),
+    rateBp: integer().notNull(),
+    /** Next installment after this entry. */
+    installmentMinor: minor().notNull(),
+    endMonth: text(),
+    /** Insertion order; entries of one booking share `createdAt` (same transaction). */
+    seq: bigint({ mode: "number" }).generatedAlwaysAsIdentity(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.mortgageId, t.date)],
+);
 
 export const rentalIncome = pgTable("rental_income", {
   propertyId: uuid()
@@ -262,6 +314,8 @@ export const settings = pgTable("settings", {
   acceleratorTable: jsonb().$type<{ minDrawdownBp: number; multiplierBp: number }[]>().notNull(),
   alertMonthsThreshold: integer().notNull().default(12),
   etfRounding: etfRounding().notNull().default("FRACTIONAL"),
+  /** EVEN: every month a share to each tax account at the pace of its yearly limit; SEQUENTIAL: fill one by one. */
+  accountFill: accountFill().notNull().default("EVEN"),
 });
 
 export const plan = pgTable(
@@ -274,7 +328,7 @@ export const plan = pgTable(
     /** `YYYY-MM` */
     month: text().notNull(),
     surplusMinor: minor().notNull(),
-    /** Part of `surplusMinor` paid on top of the regular monthly contribution. */
+    /** Correction of the regular monthly contribution for this month (negative when paying less). */
     extraMinor: minor().notNull().default(sql`0`),
     carryInMinor: minor().notNull().default(sql`0`),
     carryOutMinor: minor().notNull().default(sql`0`),

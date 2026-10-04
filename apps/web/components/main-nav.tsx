@@ -15,7 +15,6 @@ export const NAV_ITEMS = [
   { href: "/obligacje", label: "Obligacje" },
   { href: "/nieruchomosci", label: "Nieruchomości" },
   { href: "/zloto", label: "Złoto" },
-  { href: "/ustawienia", label: "Ustawienia" },
 ] as const;
 
 function isActive(pathname: string, href: string): boolean {
@@ -23,20 +22,20 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function MainNav() {
+export function MainNav({ className }: { className?: string }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Główna" className="hidden md:block">
-      <ul className="flex items-center gap-1">
+    <nav aria-label="Główna" className={cn("hidden self-stretch md:block", className)}>
+      <ul className="flex h-full items-stretch gap-1">
         {NAV_ITEMS.map((item) => {
           const active = isActive(pathname, item.href);
           return (
-            <li key={item.href}>
+            <li key={item.href} className="flex">
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex h-9 items-center border-b-2 px-3 text-xs font-semibold tracking-wide uppercase transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+                  "inline-flex items-center border-b-2 px-2.5 text-xs font-semibold tracking-wide uppercase transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
                   active
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground",
@@ -55,6 +54,7 @@ export function MainNav() {
 export function MobileNav({ householdName }: { householdName: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const items = [...NAV_ITEMS, { href: "/profil", label: "Profil" }] as const;
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
@@ -69,7 +69,7 @@ export function MobileNav({ householdName }: { householdName: string }) {
         </SheetHeader>
         <nav aria-label="Główna" className="px-2">
           <ul className="flex flex-col">
-            {NAV_ITEMS.map((item) => {
+            {items.map((item) => {
               const active = isActive(pathname, item.href);
               return (
                 <li key={item.href}>

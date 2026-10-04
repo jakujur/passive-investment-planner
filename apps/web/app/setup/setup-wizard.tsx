@@ -334,7 +334,7 @@ export function SetupWizard({ layouts, userName }: { layouts: Layout[]; userName
 
       <Section
         number="06"
-        title="Wkład własny"
+        title="Mieszkanie"
         lead="Opcjonalnie. Część nadwyżki przypisana nieruchomościom trafia na ten cel zamiast do portfela."
       >
         <FieldGroup className="gap-8">
@@ -345,7 +345,9 @@ export function SetupWizard({ layouts, userName }: { layouts: Layout[]; userName
               onCheckedChange={(checked) => update("savesForDownPayment", checked)}
             />
             <FieldContent>
-              <FieldLabel htmlFor="savesForDownPayment">Zbieram na wkład własny</FieldLabel>
+              <FieldLabel htmlFor="savesForDownPayment">
+                Zbieram na wkład własny lub zakup
+              </FieldLabel>
               <FieldDescription>
                 Odkłada na osobnym koncie bankowym poza portfelem.
               </FieldDescription>
@@ -367,7 +369,7 @@ export function SetupWizard({ layouts, userName }: { layouts: Layout[]; userName
                 <FieldError>{errors.downPaymentName}</FieldError>
               </Field>
               <Field data-invalid={errors.downPaymentTarget ? true : undefined}>
-                <FieldLabel htmlFor="downPaymentTarget">Docelowy wkład</FieldLabel>
+                <FieldLabel htmlFor="downPaymentTarget">Kwota do zebrania</FieldLabel>
                 <MoneyInput
                   id="downPaymentTarget"
                   value={draft.downPaymentTarget}

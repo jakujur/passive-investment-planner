@@ -160,22 +160,27 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
   // 5–6. Map to accounts within remaining limits and round to purchasable units
   const accounts = new Map(state.accounts.map((a) => [a.id, a]));
   const room = new Map(state.accounts.map((a) => [a.id, a.remainingLimitMinor]));
+  const yearly = new Map(state.accounts.map((a) => [a.id, a.annualLimitMinor]));
   let carryOutMinor = 0n;
   for (const { cls, amount } of shares) {
     if (amount === 0n) continue;
     const { instrument } = cls;
     if (!instrument) throw new Error(`Klasa „${cls.name}” nie ma instrumentu do zakupu`);
-    let left = amount;
     for (const accountId of cls.accountQueue) {
-      if (left === 0n) break;
+      if (!accounts.has(accountId)) {
+        throw new Error(`Nieznane konto ${accountId} w kolejce klasy „${cls.name}”`);
+      }
+    }
+    const { parts, left } =
+      state.accountFill === "EVEN"
+        ? fillEvenly(amount, cls.accountQueue, room, yearly)
+        : fillInOrder(amount, cls.accountQueue, room);
+    for (const [accountId, take] of parts) {
       const account = accounts.get(accountId);
-      if (!account) throw new Error(`Nieznane konto ${accountId} w kolejce klasy „${cls.name}”`);
-      const limit = room.get(accountId) ?? null;
-      const take = limit === null ? left : minBig(left, limit);
-      if (take <= 0n) continue;
+      if (!account || take <= 0n) continue;
       const { spentMinor, quantity } = roundPurchase(take, instrument, state.etfRounding);
-      left -= take;
       carryOutMinor += take - spentMinor;
+      const limit = room.get(accountId) ?? null;
       if (limit !== null) room.set(accountId, limit - spentMinor);
       if (spentMinor > 0n) {
         items.push({
@@ -249,6 +254,81 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
     alerts,
     allocation,
     carryOutMinor,
+  };
+}
+
+type Room = ReadonlyMap<string, bigint | null>;
+
+/** Fills the queue in order: each account up to its remaining limit, the rest flows on. */
+function fillInOrder(
+  amount: bigint,
+  queue: readonly string[],
+  room: Room,
+): { parts: [string, bigint][]; left: bigint } {
+  const parts: [string, bigint][] = [];
+  let left = amount;
+  for (const accountId of queue) {
+    if (left === 0n) break;
+    const limit = room.get(accountId) ?? null;
+    const take = limit === null ? left : minBig(left, maxBig(0n, limit));
+    if (take > 0n) {
+      parts.push([accountId, take]);
+      left -= take;
+    }
+  }
+  return { parts, left };
+}
+
+/**
+ * Spreads each class over all its tax accounts every month, each capped at a twelfth of its
+ * yearly limit (and at what is left of it), so contributions stay level through the year.
+ * Money above the monthly caps goes to the regular accounts; only when the queue has none
+ * does it fall back to the tax accounts' remaining yearly room.
+ */
+function fillEvenly(
+  amount: bigint,
+  queue: readonly string[],
+  room: Room,
+  yearly: ReadonlyMap<string, bigint | null>,
+): { parts: [string, bigint][]; left: bigint } {
+  const capped = queue.flatMap((accountId) => {
+    const remaining = room.get(accountId) ?? null;
+    const annual = yearly.get(accountId) ?? null;
+    if (remaining === null || annual === null) return [];
+    const cap = minBig(maxBig(0n, remaining), annual / 12n);
+    return cap > 0n ? [{ accountId, cap }] : [];
+  });
+  const capSum = sumBig(capped.map((c) => c.cap));
+  if (amount <= capSum) {
+    const split = allocate(
+      amount,
+      capped.map((c) => c.cap),
+    );
+    return {
+      parts: capped.map((c, i): [string, bigint] => [c.accountId, split[i] ?? 0n]),
+      left: 0n,
+    };
+  }
+  const totals = new Map<string, bigint>(capped.map((c) => [c.accountId, c.cap]));
+  const regular = queue.filter((accountId) => (room.get(accountId) ?? null) === null);
+  let rest = fillInOrder(amount - capSum, regular, room);
+  if (rest.left > 0n) {
+    const afterCap = new Map(room);
+    for (const { accountId, cap } of capped) {
+      afterCap.set(accountId, (room.get(accountId) ?? 0n) - cap);
+    }
+    const fallback = fillInOrder(rest.left, queue, afterCap);
+    rest = { parts: [...rest.parts, ...fallback.parts], left: fallback.left };
+  }
+  for (const [accountId, take] of rest.parts) {
+    totals.set(accountId, (totals.get(accountId) ?? 0n) + take);
+  }
+  return {
+    parts: queue.flatMap((accountId): [string, bigint][] => {
+      const total = totals.get(accountId);
+      return total ? [[accountId, total]] : [];
+    }),
+    left: rest.left,
   };
 }
 

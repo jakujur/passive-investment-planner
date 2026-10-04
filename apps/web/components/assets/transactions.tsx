@@ -86,6 +86,7 @@ const SOURCE_LABEL: Record<Transaction["source"], string> = {
   MANUAL: "Ręcznie",
   IMPORT: "Import",
   PLAN: "Plan",
+  OPENING: "Stan początkowy",
 };
 
 const BOND_UNIT_MINOR = 10_000n;
@@ -144,7 +145,11 @@ export function TransactionsTable({
             <TableCell className="text-right font-medium tabular-nums whitespace-nowrap">
               {formatMoney(money(t.amountMinor, t.currency))}
             </TableCell>
-            <TableCell>{t.source === "MANUAL" && <DeleteTransactionButton id={t.id} />}</TableCell>
+            <TableCell>
+              {(t.source === "MANUAL" || t.source === "OPENING") && (
+                <DeleteTransactionButton id={t.id} />
+              )}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -290,18 +295,18 @@ export function AddTransactionDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <Plus data-icon="inline-start" />
-        Dodaj zakup
+        Dodaj wcześniejszy zakup
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={onSubmit} noValidate className="contents">
           <DialogHeader>
-            <DialogTitle>{bonds ? "Zakup obligacji" : "Zakup ręczny"}</DialogTitle>
+            <DialogTitle>Wcześniejszy zakup</DialogTitle>
             <DialogDescription>
               {bonds
-                ? "EDO kupuje się w całych sztukach po 100 zł; data może być wsteczna."
-                : "Zakup spoza planu, na przykład z historii u brokera; data może być wsteczna."}
+                ? "Zakup spoza planu, np. sprzed korzystania z aplikacji. EDO kupuje się w całych sztukach po 100 zł; data może być wsteczna."
+                : "Zakup spoza planu, np. sprzed korzystania z aplikacji albo dokupiony poza miesięcznym planem; data może być wsteczna."}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup className="gap-6">

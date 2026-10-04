@@ -1,4 +1,4 @@
-import type { AssetClassKind } from "@pip/engine";
+import type { AssetClassKind, Wrapper } from "@pip/engine";
 
 export interface ClassMeta {
   kind: AssetClassKind;
@@ -53,6 +53,20 @@ export function classPath(kind: AssetClassKind): string {
   return `/${CLASSES[kind].slug}`;
 }
 
-export function classSettingsPath(kind: AssetClassKind): string {
-  return `/${CLASSES[kind].slug}/ustawienia`;
+export const WRAPPER_LABEL: Record<Wrapper, string> = {
+  IKE: "IKE",
+  IKE_OBLIGACJE: "IKE-Obligacje",
+  IKZE: "IKZE",
+  IKZE_OBLIGACJE: "IKZE-Obligacje",
+  REGULAR: "Zwykłe",
+  CASH: "Gotówka",
+};
+
+/** Short tag for an account: wrapper plus the IKZE variant when it matters. */
+export function wrapperTag(wrapper: Wrapper, ikzeEntrepreneur: boolean): string {
+  const label = WRAPPER_LABEL[wrapper];
+  if ((wrapper === "IKZE" || wrapper === "IKZE_OBLIGACJE") && ikzeEntrepreneur) {
+    return `${label} · przeds.`;
+  }
+  return label;
 }

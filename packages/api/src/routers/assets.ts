@@ -10,8 +10,8 @@ import { parseMoney, sumBig, toDecimalString } from "@pip/money";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { BOND_TERM_YEARS } from "../bonds";
-import { loadQuotes, priceInBaseAt, weeklyDates } from "../market";
+import { lotMaturityDate } from "../bonds";
+import { chartDates, loadQuotes, priceInBaseAt, weeklyDates } from "../market";
 import { householdAccounts } from "../ownership";
 import { BOND_NOMINAL_MINOR, loadPlanContext, loadPurchases } from "../plan-state";
 import { currentMonth, today } from "../time";
@@ -52,13 +52,13 @@ export const assetsRouter = router({
               broker: row.account.broker,
               wrapper: row.account.wrapper,
               currency: row.account.currency,
+              personId: row.person.id,
               personName: row.person.name,
+              ikzeEntrepreneur: row.account.ikzeEntrepreneur,
             }
           : null;
       };
-      const instrumentIds = [cls.purchaseInstrumentId, cls.benchmarkInstrumentId].filter(
-        (id): id is string => id !== null,
-      );
+      const instrumentIds = cls.purchaseInstrumentId ? [cls.purchaseInstrumentId] : [];
       const instrumentRows = instrumentIds.length
         ? await ctx.db
             .select()
@@ -69,8 +69,6 @@ export const assetsRouter = router({
         classId: cls.id,
         name: cls.name,
         targetWeightBp: cls.targetWeightBp,
-        bandAbsBp: cls.bandAbsBp,
-        bandRelBp: cls.bandRelBp,
         position,
         queue: cls.accountQueue.flatMap((id) => {
           const label = accountLabel(id);
@@ -78,7 +76,6 @@ export const assetsRouter = router({
           return label ? [{ ...label, limit }] : [];
         }),
         purchaseInstrument: instrumentRows.find((i) => i.id === cls.purchaseInstrumentId) ?? null,
-        benchmarkInstrument: instrumentRows.find((i) => i.id === cls.benchmarkInstrumentId) ?? null,
       };
 
       if (input.kind === "EQUITY" || input.kind === "GOLD") {
@@ -88,7 +85,7 @@ export const assetsRouter = router({
             accountRows.map((r) => r.account.id),
           )
         ).filter((p) => p.assetKind === input.kind);
-        const marketId = cls.benchmarkInstrumentId ?? cls.purchaseInstrumentId;
+        const marketId = cls.purchaseInstrumentId;
         const quotes = await loadQuotes(ctx.db, [
           ...new Set([...purchases.map((p) => p.instrumentId), ...instrumentIds]),
         ]);
@@ -122,7 +119,7 @@ export const assetsRouter = router({
 
         const marketQuotes = marketId ? quotes.get(marketId) : undefined;
         const market = marketQuotes
-          ? weeklyDates(marketQuotes.prices[0]?.date ?? date, date).flatMap((d) => {
+          ? chartDates(marketQuotes.prices[0]?.date ?? date, date).flatMap((d) => {
               const price = priceInBaseAt(marketQuotes, d);
               return price ? [{ date: d, priceMinor: price.priceMinor }] : [];
             })
@@ -136,6 +133,19 @@ export const assetsRouter = router({
           lastQuote: priceInBaseAt(marketQuotes, date),
           marketCurrency: instrumentRows.find((i) => i.id === marketId)?.currency ?? "PLN",
           drawdownBp: drawdownBp(marketQuotes?.prices ?? []),
+          /** Unit price paid per purchase (PLN), drawn as horizontal lines on the market chart. */
+          purchaseMarks: purchases.flatMap((p) => {
+            const quantity = p.quantity ? parseQuantity(p.quantity) : 0n;
+            if (quantity === 0n) return [];
+            return [
+              {
+                date: p.date,
+                quantity: quantityString(quantity),
+                unitPriceMinor: (p.costMinor * 10n ** BigInt(QUANTITY_DIGITS)) / quantity,
+                accountName: accountLabel(p.accountId)?.name ?? "",
+              },
+            ];
+          }),
           holdings: [...holdings.values()].map((h) => ({
             account: accountLabel(h.accountId),
             instrumentId: h.instrumentId,
@@ -156,9 +166,7 @@ export const assetsRouter = router({
           : [];
         const lotViews = lots
           .map((lot) => {
-            const ticker = lot.series.replace(/\d+$/, "");
-            const years = BOND_TERM_YEARS[ticker] ?? 0;
-            const maturityDate = `${Number(lot.purchaseDate.slice(0, 4)) + years}${lot.purchaseDate.slice(4)}`;
+            const maturityDate = lotMaturityDate(lot.series, lot.purchaseDate);
             return {
               id: lot.id,
               series: lot.series,
@@ -273,45 +281,35 @@ export const assetsRouter = router({
       };
     }),
 
+  /** Fill order of the class's own accounts and the instrument the plan buys. */
   updateClass: householdProcedure
     .input(
       z.object({
-        kind: assetKind,
-        bandAbsBp: z.int().min(0).max(5000).nullable(),
-        bandRelBp: z.int().min(0).max(10_000).nullable(),
-        accountQueue: z.array(z.uuid()).max(10),
+        kind: z.enum(["EQUITY", "BONDS", "GOLD"]),
+        accountQueue: z.array(z.uuid()).max(20),
         purchaseInstrumentId: z.uuid().nullable(),
-        benchmarkInstrumentId: z.uuid().nullable(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const owned = new Set(
-        (await householdAccounts(ctx.db, ctx.householdId)).map((r) => r.account.id),
-      );
-      if (input.accountQueue.some((id) => !owned.has(id))) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Nie ma takiego konta." });
-      }
-      if (new Set(input.accountQueue).size !== input.accountQueue.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Konto powtarza się w kolejce." });
-      }
-      if (input.kind === "REAL_ESTATE" && input.accountQueue.length > 0) {
+      const classAccounts = (await householdAccounts(ctx.db, ctx.householdId))
+        .filter((r) => r.account.assetKind === input.kind)
+        .map((r) => r.account.id);
+      const sameSet =
+        input.accountQueue.length === classAccounts.length &&
+        new Set(input.accountQueue).size === classAccounts.length &&
+        input.accountQueue.every((id) => classAccounts.includes(id));
+      if (!sameSet) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Nieruchomości nie mają kolejki kont — strumień idzie w cel lub nadpłatę.",
+          message: "Kolejka musi zawierać dokładnie konta tej klasy aktywów.",
         });
       }
-      const instrumentIds = [input.purchaseInstrumentId, input.benchmarkInstrumentId].filter(
-        (id): id is string => id !== null,
-      );
-      if (instrumentIds.length) {
-        const rows = await ctx.db
-          .select({ id: schema.instrument.id, assetKind: schema.instrument.assetKind })
+      if (input.purchaseInstrumentId) {
+        const [instrument] = await ctx.db
+          .select({ assetKind: schema.instrument.assetKind })
           .from(schema.instrument)
-          .where(inArray(schema.instrument.id, instrumentIds));
-        if (
-          rows.length !== new Set(instrumentIds).size ||
-          rows.some((r) => r.assetKind !== input.kind)
-        ) {
+          .where(eq(schema.instrument.id, input.purchaseInstrumentId));
+        if (instrument?.assetKind !== input.kind) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Instrument nie należy do tej klasy aktywów.",
@@ -321,11 +319,8 @@ export const assetsRouter = router({
       await ctx.db
         .update(schema.assetClass)
         .set({
-          bandAbsBp: input.bandAbsBp,
-          bandRelBp: input.bandRelBp,
           accountQueue: input.accountQueue,
           purchaseInstrumentId: input.purchaseInstrumentId,
-          benchmarkInstrumentId: input.benchmarkInstrumentId,
         })
         .where(
           and(

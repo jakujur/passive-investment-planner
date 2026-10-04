@@ -7,6 +7,7 @@ export {
   renormalizedWeights,
   weightBp,
 } from "./bands";
+export { addMonths, forecastGoal, type GoalForecast, type GoalForecastInput } from "./forecast";
 export {
   type AnnualLimits,
   annualLimitMinor,
@@ -15,6 +16,22 @@ export {
   type WrapperFamily,
   wrapperFamily,
 } from "./limits";
+export {
+  annuityInstallment,
+  applyOverpayment,
+  completeTerms,
+  decreasingInstallment,
+  type InstallmentType,
+  interestSaved,
+  type MortgageState,
+  monthlyInterest,
+  monthsBetween,
+  monthsToRepay,
+  type OverpaymentMode,
+  type ProjectionPoint,
+  payInstallment,
+  projectMortgage,
+} from "./mortgage";
 export { planMonth } from "./plan-month";
 export type * from "./types";
 export {

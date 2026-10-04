@@ -16,6 +16,7 @@ const account = (
   currency: "PLN",
   fxRate: RATE_SCALE,
   remainingLimitMinor: remainingLimit === null ? null : zl(remainingLimit),
+  annualLimitMinor: remainingLimit === null ? null : zl(remainingLimit),
 });
 
 const COUPLE_ACCOUNTS: AccountState[] = [
@@ -91,6 +92,7 @@ function state(overrides: Partial<PlanState> = {}): PlanState {
     equityDrawdownBp: 0,
     acceleratorTable: DEFAULT_ACCELERATOR_TABLE,
     etfRounding: "FRACTIONAL",
+    accountFill: "SEQUENTIAL",
     alertMonthsThreshold: 12,
     ...overrides,
   };
@@ -402,6 +404,74 @@ describe("planMonth — konta i limity", () => {
       expect.objectContaining({ type: "NO_ACCOUNT_CAPACITY", classId: "equity" }),
     );
     expectBalanced(plan);
+  });
+});
+
+describe("planMonth — równomierne wypełnianie kont", () => {
+  const withGoal = {
+    realEstate: {
+      goal: { id: "flat", accountId: "cushion", remainingMinor: zl(100_000) },
+      mortgage: null,
+    },
+  };
+
+  it("caps each tax account at a twelfth of its yearly limit and sends the rest to the regular account", () => {
+    // IKE 28 260 / 12 = 2 355 zł, IKZE (przedsiębiorca) 16 956 / 12 = 1 413 zł per month.
+    const plan = planMonth(state({ ...withGoal, accountFill: "EVEN" }), zl(10_000));
+
+    expect(buys(plan, "equity").map((b) => [b.accountId, b.amountMinor])).toEqual([
+      ["ike", zl(2_355)],
+      ["ikze", zl(1_413)],
+      ["xtb", zl(732)],
+    ]);
+    expectBalanced(plan);
+  });
+
+  it("splits proportionally to the monthly caps when the class amount is smaller", () => {
+    const plan = planMonth(state({ ...withGoal, accountFill: "EVEN" }), zl(4_000));
+
+    // Equities get 1 800 zł; caps 2 355 : 1 413.
+    const equity = buys(plan, "equity").map((b) => [b.accountId, b.amountMinor]);
+    expect(equity.map(([id]) => id)).toEqual(["ike", "ikze"]);
+    expect(sumBig(buys(plan, "equity").map((b) => b.amountMinor))).toBe(zl(1_800));
+  });
+
+  it("never exceeds what is left of the yearly limit", () => {
+    const plan = planMonth(
+      state({
+        ...withGoal,
+        accountFill: "EVEN",
+        accounts: COUPLE_ACCOUNTS.map((a) =>
+          a.id === "ike" || a.id === "ikze" ? { ...a, remainingLimitMinor: zl(600) } : a,
+        ),
+      }),
+      zl(10_000),
+    );
+
+    expect(buys(plan, "equity").map((b) => [b.accountId, b.amountMinor])).toEqual([
+      ["ike", zl(600)],
+      ["ikze", zl(600)],
+      ["xtb", zl(3_300)],
+    ]);
+  });
+
+  it("falls back to the tax accounts' yearly room when the queue has no regular account", () => {
+    const plan = planMonth(
+      state({
+        ...withGoal,
+        accountFill: "EVEN",
+        classes: classes().map((c) =>
+          c.id === "equity" ? { ...c, accountQueue: ["ike", "ikze"] } : c,
+        ),
+      }),
+      zl(10_000),
+    );
+
+    expect(buys(plan, "equity").map((b) => [b.accountId, b.amountMinor])).toEqual([
+      ["ike", zl(3_087)],
+      ["ikze", zl(1_413)],
+    ]);
+    expect(plan.alerts.some((a) => a.type === "NO_ACCOUNT_CAPACITY")).toBe(false);
   });
 });
 

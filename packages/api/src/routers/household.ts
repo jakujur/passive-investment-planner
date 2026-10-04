@@ -1,10 +1,13 @@
 import { schema, type Tx } from "@pip/db";
-import { DEFAULT_ACCELERATOR_TABLE } from "@pip/engine";
+import { addMonths, DEFAULT_ACCELERATOR_TABLE, forecastGoal, wrapperFamily } from "@pip/engine";
+import { sumBig } from "@pip/money";
 import { TRPCError } from "@trpc/server";
 import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { ACCOUNT_LAYOUTS, LAYOUTS } from "../layouts";
-import { loadPlanContext } from "../plan-state";
+import { loadQuotes, priceInBaseAt } from "../market";
+import { householdAccounts } from "../ownership";
+import { loadPlanContext, loadPurchases } from "../plan-state";
 import { currentMonth, today } from "../time";
 import { householdProcedure, protectedProcedure, publicProcedure, router } from "../trpc";
 
@@ -88,6 +91,9 @@ export const householdRouter = router({
     }
 
     const blueprint = LAYOUTS[input.layout];
+    const queueKind = (key: string) =>
+      (["EQUITY", "BONDS", "GOLD"] as const).find((kind) => blueprint.queues[kind].includes(key)) ??
+      null;
     return ctx.db.transaction(async (tx) => {
       const [household] = await tx
         .insert(schema.household)
@@ -104,7 +110,6 @@ export const householdRouter = router({
           input.persons.map((p, i) => ({
             householdId: household.id,
             name: p.name,
-            isEntrepreneur: p.isEntrepreneur,
             userId: i === 0 ? ctx.user.id : null,
           })),
         )
@@ -124,6 +129,10 @@ export const householdRouter = router({
             broker: a.broker,
             wrapper: a.wrapper,
             currency: "PLN" as const,
+            assetKind: queueKind(a.key),
+            ikzeEntrepreneur:
+              wrapperFamily(a.wrapper) === "IKZE" &&
+              (input.persons[a.personIndex]?.isEntrepreneur ?? false),
           })),
         )
         .returning({ id: schema.account.id });
@@ -137,7 +146,6 @@ export const householdRouter = router({
           kind: "EQUITY",
           name: "Akcje",
           targetWeightBp: 4500,
-          benchmarkInstrumentId: instruments.acwi,
           purchaseInstrumentId: instruments.acwi,
           accountQueue: queue(blueprint.queues.EQUITY),
         },
@@ -191,7 +199,7 @@ export const householdRouter = router({
           .insert(schema.account)
           .values({
             personId: personId(0),
-            name: "Wkład własny",
+            name: "Konto oszczędnościowe",
             broker: "Bank",
             wrapper: "CASH",
             currency: "PLN",
@@ -220,8 +228,67 @@ export const householdRouter = router({
   }),
 
   overview: householdProcedure.query(async ({ ctx }) => {
-    const { labels, summary } = await loadPlanContext(ctx.db, ctx.householdId, currentMonth());
-    return { labels, summary };
+    const { state, labels, summary, settings } = await loadPlanContext(
+      ctx.db,
+      ctx.householdId,
+      currentMonth(),
+    );
+    const accounts = await householdAccounts(ctx.db, ctx.householdId);
+    const purchases = await loadPurchases(
+      ctx.db,
+      accounts.map((a) => a.account.id),
+    );
+    const instrumentIds = state.classes.flatMap((c) => (c.instrument ? [c.instrument.id] : []));
+    const quotes = await loadQuotes(ctx.db, instrumentIds);
+    const date = today();
+    /** Per class: what was paid in so far and the latest quote of the instrument being bought. */
+    const insights = Object.fromEntries(
+      state.classes.map((c) => [
+        c.id,
+        {
+          contributedMinor: sumBig(
+            purchases.filter((p) => p.assetKind === c.kind).map((p) => p.costMinor),
+          ),
+          instrumentName: c.instrument ? (labels.instruments[c.instrument.id]?.name ?? null) : null,
+          lastQuote: c.instrument ? priceInBaseAt(quotes.get(c.instrument.id), date) : null,
+        },
+      ]),
+    );
+    const goal = state.realEstate.goal;
+    const month = currentMonth();
+    const [booked] = await ctx.db
+      .select({ id: schema.plan.id })
+      .from(schema.plan)
+      .where(
+        and(
+          eq(schema.plan.householdId, ctx.householdId),
+          eq(schema.plan.month, month),
+          eq(schema.plan.status, "DONE"),
+        ),
+      )
+      .limit(1);
+    const forecast = goal
+      ? forecastGoal({
+          remainingMinor: goal.remainingMinor,
+          contributionMinor: settings.monthlyContributionMinor,
+          cushionGapMinor: state.cushion.targetMinor - state.cushion.balanceMinor,
+          cushionShareBp: state.cushion.surplusShareBp,
+          realEstateWeightBp:
+            state.classes.find((c) => c.kind === "REAL_ESTATE")?.targetWeightBp ?? 0,
+          // A booked month already paid into the goal; the forecast starts with the next one.
+          startMonth: booked ? addMonths(month, 1) : month,
+        })
+      : null;
+    /** When the down payment for the goal the plan funds will be complete; `forecast` null = never. */
+    const goalForecast = goal
+      ? {
+          goalId: goal.id,
+          name: labels.goals[goal.id]?.name ?? "",
+          remainingMinor: goal.remainingMinor,
+          forecast,
+        }
+      : null;
+    return { labels, summary, insights, goalForecast };
   }),
 });
 

@@ -1,4 +1,5 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
+import { accountsRouter } from "./routers/accounts";
 import { assetsRouter } from "./routers/assets";
 import { householdRouter } from "./routers/household";
 import { instrumentsRouter } from "./routers/instruments";
@@ -14,6 +15,7 @@ export const appRouter = router({
   plan: planRouter,
   settings: settingsRouter,
   assets: assetsRouter,
+  accounts: accountsRouter,
   transactions: transactionsRouter,
   instruments: instrumentsRouter,
   realEstate: realEstateRouter,

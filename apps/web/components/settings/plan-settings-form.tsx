@@ -38,9 +38,9 @@ interface Draft {
   expenses: string;
   cushionMonths: string;
   cushionShare: string;
-  rent: string;
   alertMonths: string;
   etfRounding: Settings["etfRounding"];
+  accountFill: Settings["accountFill"];
 }
 type Errors = Partial<Record<keyof Draft, string>>;
 
@@ -58,9 +58,9 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
     expenses: moneyToInput(settings.monthlyExpensesMinor),
     cushionMonths: String(settings.cushionMonths),
     cushionShare: bpToInput(settings.cushionSurplusShareBp),
-    rent: settings.currentRentMinor === null ? "" : moneyToInput(settings.currentRentMinor),
     alertMonths: String(settings.alertMonthsThreshold),
     etfRounding: settings.etfRounding,
+    accountFill: settings.accountFill,
   });
   const [errors, setErrors] = useState<Errors>({});
   const [saved, setSaved] = useState(false);
@@ -91,8 +91,6 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
     if (months === null) next.cushionMonths = "Od 0 do 36 miesięcy.";
     const share = readPercentBp(draft.cushionShare);
     if (share === null || share < 0 || share > 10_000) next.cushionShare = "Od 0 do 100%.";
-    const rent = draft.rent.trim() === "" ? null : readMoney(draft.rent);
-    if (draft.rent.trim() !== "" && (rent === null || rent < 0n)) next.rent = MONEY_FORMAT_HINT;
     const alertMonths = intIn(draft.alertMonths, 1, 120);
     if (alertMonths === null) next.alertMonths = "Od 1 do 120 miesięcy.";
     setErrors(next);
@@ -111,14 +109,59 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
       monthlyExpensesMinor: expenses,
       cushionMonths: months,
       cushionSurplusShareBp: share,
-      currentRentMinor: rent,
       alertMonthsThreshold: alertMonths,
       etfRounding: draft.etfRounding,
+      accountFill: draft.accountFill,
     });
   }
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Rozkład zakupów na konta</CardTitle>
+          <CardDescription>
+            Jak część wpłaty przypadająca na klasę trafia na jej konta IKE, IKZE i zwykłe.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            aria-label="Rozkład zakupów na konta"
+            value={draft.accountFill}
+            onValueChange={(value: unknown) => {
+              if (value === "EVEN" || value === "SEQUENTIAL") set("accountFill", value);
+            }}
+            className="sm:grid-cols-2"
+          >
+            <FieldLabel htmlFor="s-fill-even">
+              <Field orientation="horizontal">
+                <RadioGroupItem value="EVEN" id="s-fill-even" />
+                <FieldContent>
+                  <span className="text-sm font-normal normal-case tracking-normal">
+                    Równomiernie na wszystkie konta
+                  </span>
+                  <FieldDescription>
+                    Co miesiąc na każde IKE/IKZE do 1/12 rocznego limitu, nadwyżka na rachunek
+                    zwykły.
+                  </FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldLabel>
+            <FieldLabel htmlFor="s-fill-seq">
+              <Field orientation="horizontal">
+                <RadioGroupItem value="SEQUENTIAL" id="s-fill-seq" />
+                <FieldContent>
+                  <span className="text-sm font-normal normal-case tracking-normal">Po kolei</span>
+                  <FieldDescription>
+                    Najpierw zapełnia pierwsze konto z kolejki, potem następne.
+                  </FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldLabel>
+          </RadioGroup>
+        </CardContent>
+      </Card>
+
       <Card size="sm">
         <CardHeader>
           <CardTitle>Plan miesięczny</CardTitle>
@@ -153,7 +196,7 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
                 <InputGroupAddon align="inline-end">mies.</InputGroupAddon>
               </InputGroup>
               <FieldDescription>
-                Ostrzegaj, gdy powrót klasy do pasma samymi wpłatami potrwa dłużej.
+                Ostrzegaj, gdy powrót klasy do tolerancji samymi wpłatami potrwa dłużej.
               </FieldDescription>
               <FieldError>{errors.alertMonths}</FieldError>
             </Field>
@@ -259,29 +302,6 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
               />
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Mieszkanie</CardTitle>
-          <CardDescription>
-            Czynsz, który płacisz dziś — punkt odniesienia dla nieruchomości.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Field data-invalid={errors.rent ? true : undefined} className="sm:max-w-xs">
-            <FieldLabel htmlFor="s-rent">Obecny czynsz najmu</FieldLabel>
-            <MoneyInput
-              id="s-rent"
-              value={draft.rent}
-              onChange={(v) => set("rent", v)}
-              placeholder="brak — mieszkam u siebie"
-              aria-invalid={errors.rent ? true : undefined}
-            />
-            <FieldDescription>Miesięcznie; puste, jeśli nie wynajmujesz.</FieldDescription>
-            <FieldError>{errors.rent}</FieldError>
-          </Field>
         </CardContent>
       </Card>
 

@@ -3,8 +3,8 @@ import { formatBand, formatBp } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
- * Current weight against its target band on a 0 → scale axis. The band is a tinted span, the
- * target a hairline tick, the current weight a solid marker; outside the band the marker is amber.
+ * Current share against its tolerance range on a 0 → scale axis. The range is a tinted span, the
+ * target a hairline tick, the current share a solid marker; outside the range the marker is amber.
  */
 export function WeightGauge({
   weightBp,
@@ -24,7 +24,7 @@ export function WeightGauge({
   const outside = weightBp < band.lowerBp || weightBp > band.upperBp;
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="font-medium tabular-nums">
           {formatBp(weightBp)}
@@ -33,10 +33,11 @@ export function WeightGauge({
         <span
           className={cn("text-xs tabular-nums", outside ? "text-warning" : "text-muted-foreground")}
         >
-          pasmo {formatBand(band)}
+          {outside ? "poza tolerancją " : "tolerancja "}
+          {formatBand(band)}
         </span>
       </div>
-      <div aria-hidden className="relative h-2 w-full bg-muted">
+      <div aria-hidden className="relative h-1.5 w-full bg-muted">
         <div
           className={cn("absolute inset-y-0 opacity-30", colorClass)}
           style={{ left: pct(band.lowerBp), width: pct(band.upperBp - band.lowerBp) }}

@@ -12,7 +12,12 @@ const chartResponse = z.object({
     result: z
       .array(
         z.object({
-          meta: z.object({ currency: z.string(), gmtoffset: z.number() }),
+          meta: z.object({
+            currency: z.string(),
+            gmtoffset: z.number(),
+            longName: z.string().optional(),
+            shortName: z.string().optional(),
+          }),
           timestamp: z.array(z.number()).default([]),
           indicators: z.object({
             quote: z.array(z.object({ close: z.array(z.number().nullable()).default([]) })),
@@ -26,7 +31,7 @@ const chartResponse = z.object({
 export async function fetchYahooDaily(
   symbol: string,
   from: string,
-): Promise<{ currency: string; points: PricePoint[] }> {
+): Promise<{ currency: string; name: string; points: PricePoint[] }> {
   const period1 = Math.floor(new Date(`${from}T00:00:00Z`).getTime() / 1000);
   const period2 = Math.floor(Date.now() / 1000);
   const json = await getJson(
@@ -44,5 +49,9 @@ export async function fetchYahooDaily(
     const date = new Date((ts + result.meta.gmtoffset) * 1000).toISOString().slice(0, 10);
     points.push({ date, closeMinor: parseMoney(close.toFixed(2)) });
   });
-  return { currency: result.meta.currency, points };
+  return {
+    currency: result.meta.currency,
+    name: result.meta.longName ?? result.meta.shortName ?? symbol,
+    points,
+  };
 }

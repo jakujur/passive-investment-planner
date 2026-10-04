@@ -55,6 +55,12 @@ export function formatPln(minor: bigint): string {
   return formatMoney(money(minor));
 }
 
+/** Signed correction of the monthly contribution: "+2000,00 zł", "−1500,00 zł", "0,00 zł". */
+export function formatAdjustment(minor: bigint): string {
+  if (minor < 0n) return `−${formatPln(-minor)}`;
+  return minor > 0n ? `+${formatPln(minor)}` : formatPln(minor);
+}
+
 const dayMonthFormatter = new Intl.DateTimeFormat("pl-PL", { day: "numeric", month: "numeric" });
 const shortDateFormatter = new Intl.DateTimeFormat("pl-PL", {
   day: "numeric",

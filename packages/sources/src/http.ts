@@ -2,13 +2,20 @@ const USER_AGENT = "passive-investment-planner/0.1 (prywatny tracker inwestycji)
 
 /** GET JSON; `null` on 404, which NBP returns for ranges without publications (weekends, holidays). */
 export async function getJson(url: string): Promise<unknown> {
-  const response = await fetch(url, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`);
-  return response.json();
+  // Yahoo rate-limits bursts with 429/503; back off and retry a few times like the GEM dashboard.
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (response.status === 404) return null;
+    if ((response.status === 429 || response.status === 503) && attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 1_500 * 2 ** attempt));
+      continue;
+    }
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText} — ${url}`);
+    return response.json();
+  }
 }
 
 /** Inclusive `[from, to]` date ranges of at most `days` days. */

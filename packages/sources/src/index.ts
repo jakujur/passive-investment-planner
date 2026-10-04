@@ -101,6 +101,23 @@ export async function refreshMarketData(db: Db): Promise<SourceReport[]> {
   return reports;
 }
 
+const FRESH_FOR_MS = 15 * 60_000;
+let lastRefreshAt = 0;
+let inFlight: Promise<SourceReport[]> | null = null;
+
+/**
+ * Refreshes market data at most every 15 minutes per process and lets concurrent callers
+ * share one run, so every page shows current quotes without a manual refresh button.
+ */
+export async function ensureFreshMarketData(db: Db): Promise<SourceReport[]> {
+  if (Date.now() - lastRefreshAt < FRESH_FOR_MS) return [];
+  inFlight ??= refreshMarketData(db).finally(() => {
+    lastRefreshAt = Date.now();
+    inFlight = null;
+  });
+  return inFlight;
+}
+
 async function storeChecked(
   db: Db,
   instrumentId: string,
@@ -187,3 +204,4 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 export { fetchYahooDaily } from "./yahoo";
+export { type SymbolHit, searchYahooSymbols } from "./yahoo-search";

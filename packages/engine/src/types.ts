@@ -8,6 +8,12 @@ export type InstrumentType = "ETF" | "BOND" | "GOLD";
 
 export type EtfRounding = "WHOLE" | "FRACTIONAL";
 
+/**
+ * EVEN: every month each tax account gets up to a twelfth of its yearly limit, the rest goes to
+ * regular accounts. SEQUENTIAL: fill tax accounts one by one up to their yearly limits.
+ */
+export type AccountFill = "EVEN" | "SEQUENTIAL";
+
 /** Inclusive weight range in basis points. */
 export interface Band {
   lowerBp: number;
@@ -26,7 +32,7 @@ export interface ClassState {
   kind: AssetClassKind;
   name: string;
   targetWeightBp: number;
-  /** Overrides the default ±500 bp band for weights ≥ 20%. */
+  /** Explicit ± tolerance in bp for any weight; without it ±500 bp (≥ 20%) or ±25% of the weight. */
   bandAbsBp?: number;
   /** Overrides the default ±25% relative band for weights < 20%. */
   bandRelBp?: number;
@@ -44,6 +50,8 @@ export interface AccountState {
   fxRate: bigint;
   /** Contribution room left this calendar year in the base currency; `null` = no limit. */
   remainingLimitMinor: bigint | null;
+  /** This year's limit of the wrapper; `null` = no limit. EVEN fill caps a month at a twelfth of it. */
+  annualLimitMinor: bigint | null;
 }
 
 export interface AcceleratorStep {
@@ -74,6 +82,7 @@ export interface PlanState {
   equityDrawdownBp: number;
   acceleratorTable: readonly AcceleratorStep[];
   etfRounding: EtfRounding;
+  accountFill: AccountFill;
   alertMonthsThreshold: number;
 }
 

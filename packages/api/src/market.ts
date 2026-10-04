@@ -67,6 +67,26 @@ export function priceInBaseAt(quotes: InstrumentQuotes | undefined, date: string
   };
 }
 
+/** Daily points for the last ~13 months (zoomed views), weekly before that. */
+export function chartDates(from: string, to: string): string[] {
+  const dailyFrom = new Date(`${to}T00:00:00Z`);
+  dailyFrom.setUTCDate(dailyFrom.getUTCDate() - 400);
+  const split = dailyFrom.toISOString().slice(0, 10);
+  if (from >= split) return dailyDates(from, to);
+  return [...weeklyDates(from, split).slice(0, -1), ...dailyDates(split, to)];
+}
+
+function dailyDates(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const day = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  while (day <= end) {
+    dates.push(day.toISOString().slice(0, 10));
+    day.setUTCDate(day.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 /** Weekly dates from `from` up to and including `to`. */
 export function weeklyDates(from: string, to: string): string[] {
   const dates: string[] = [];

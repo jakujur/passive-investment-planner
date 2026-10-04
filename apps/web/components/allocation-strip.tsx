@@ -9,15 +9,19 @@ export interface Segment {
   amountMinor: bigint;
   /** Shown next to the amount, e.g. the target weight. */
   detail?: string;
+  /** Second line under the label, e.g. when a down payment will be complete. */
+  note?: string;
 }
 
 export function AllocationStrip({
   segments,
   emptyCaption,
+  legend = true,
   className,
 }: {
   segments: Segment[];
   emptyCaption: string;
+  legend?: boolean;
   className?: string;
 }) {
   const total = segments.reduce((sum, segment) => sum + segment.amountMinor, 0n);
@@ -41,23 +45,33 @@ export function AllocationStrip({
           <p className="text-sm text-muted-foreground">{emptyCaption}</p>
         </div>
       )}
-      <ul className="grid gap-x-8 gap-y-2 @lg:grid-cols-2">
-        {segments.map((segment) => (
-          <li key={segment.id} className="flex items-baseline gap-2 text-sm">
-            <span
-              aria-hidden
-              className={cn("mt-1 size-2.5 shrink-0 self-center", SEGMENT_BG[segment.tone])}
-            />
-            <span className="min-w-0 flex-1 truncate">{segment.label}</span>
-            {segment.detail && (
-              <span className="text-muted-foreground tabular-nums">{segment.detail}</span>
-            )}
-            <span className="font-medium tabular-nums">
-              {formatMoney(money(segment.amountMinor))}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {legend && (
+        <ul className="grid gap-x-8 gap-y-2 @lg:grid-cols-2">
+          {segments.map((segment) => (
+            <li key={segment.id} className="flex flex-col gap-0.5 text-sm">
+              <div className="flex items-baseline gap-2">
+                <span
+                  aria-hidden
+                  className={cn("mt-1 size-2.5 shrink-0 self-center", SEGMENT_BG[segment.tone])}
+                />
+                <span className="min-w-0 flex-1 truncate">{segment.label}</span>
+                {segment.detail && (
+                  <span className="text-muted-foreground tabular-nums">{segment.detail}</span>
+                )}
+                <span className="font-medium tabular-nums">
+                  {formatMoney(money(segment.amountMinor))}
+                </span>
+              </div>
+              {segment.note && (
+                <span className="flex gap-2 text-xs text-muted-foreground">
+                  <span aria-hidden className="size-2.5 shrink-0" />
+                  <span>{segment.note}</span>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

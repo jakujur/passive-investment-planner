@@ -42,6 +42,11 @@ describe("bandFor", () => {
     expect(bandFor(4500)).toEqual({ lowerBp: 4000, upperBp: 5000 });
     expect(bandFor(500)).toEqual({ lowerBp: 375, upperBp: 625 });
   });
+
+  it("applies an explicit ± tolerance to any class size", () => {
+    expect(bandFor(500, { bandAbsBp: 200 })).toEqual({ lowerBp: 300, upperBp: 700 });
+    expect(bandFor(4500, { bandAbsBp: 300 })).toEqual({ lowerBp: 4200, upperBp: 4800 });
+  });
 });
 
 describe("acceleratorMultiplierBp", () => {

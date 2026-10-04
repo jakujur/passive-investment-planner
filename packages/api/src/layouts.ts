@@ -23,12 +23,12 @@ export interface LayoutBlueprint {
 /** Accounts every household gets, owned by the first person. */
 const COMMON: AccountBlueprint[] = [
   { key: "cushion", personIndex: 0, name: "Poduszka", broker: "Bank", wrapper: "CASH" },
-  { key: "xtb", personIndex: 0, name: "XTB — rachunek zwykły", broker: "XTB", wrapper: "REGULAR" },
+  { key: "xtb", personIndex: 0, name: "Rachunek zwykły", broker: "XTB", wrapper: "REGULAR" },
   {
     key: "bonds",
     personIndex: 0,
-    name: "Obligacje — rejestr zwykły",
-    broker: "obligacjeskarbowe.pl",
+    name: "Rejestr zwykły",
+    broker: "PKO BP",
     wrapper: "REGULAR",
   },
   { key: "gold", personIndex: 0, name: "Złoto", broker: "BullionVault", wrapper: "REGULAR" },

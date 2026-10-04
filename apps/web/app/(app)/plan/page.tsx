@@ -6,9 +6,6 @@ export const metadata: Metadata = { title: "Plan miesiąca" };
 
 export default async function PlanPage() {
   const api = await serverApi();
-  const [current, history] = await Promise.all([
-    api.plan.current({ extraMinor: 0n }),
-    api.plan.history(),
-  ]);
-  return <PlanView initial={current} history={history} />;
+  const current = await api.plan.current({ adjustmentMinor: 0n });
+  return <PlanView initial={current} />;
 }

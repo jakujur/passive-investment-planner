@@ -12,7 +12,7 @@ Założenia wersji 1:
 - **Waluty:** IKE i IKZE tylko w PLN. Zwykłe konta mogą być w dowolnej walucie, przeliczane kursem NBP.
 - **Tylko wpłaty:** żadnych wypłat ani sprzedaży. Rebalancing wyłącznie nowymi wpłatami (zmienną kwotą). Gdy nowe wpłaty nie wystarczają — tylko informacja.
 - **Klasy aktywów:** globalne akcje (ETF), obligacje skarbowe (EDO i inne detaliczne), nieruchomości, złoto. Bez Catalyst i bez zamienników typu IB01.
-- **Benchmark:** każda klasa ma przypisany indeks odniesienia i wagę w portfelu, do porównywania zysków.
+- **Benchmark:** nie jest ustawieniem klasy — na wykresie rynku można dodać linię porównawczą dowolnego symbolu (wyszukiwarka Yahoo), znormalizowaną do % zmiany.
 - **Użytkownicy:** gospodarstwo domowe z jedną osobą (singiel) albo z wieloma osobami (np. małżonkowie), każda z własnymi kontami i limitami. Silnik nie zakłada liczby osób.
 - **Dostęp:** aplikacja wymaga logowania; dane gospodarstwa widzą wyłącznie jego członkowie.
 - **Pieniądze:** w bazie w groszach/centach (liczby całkowite), na froncie formatowane jako zł.gr.
@@ -117,9 +117,9 @@ Sercem aplikacji jest czysta funkcja `planMonth(state, surplus) → Plan`. Nie z
 6. **Zaokrąglenia.** Obligacje w pełnych 100 zł. ETF według ustawienia: całe jednostki albo ułamkowe. Reszta trafia jako gotówka do następnego miesiąca.
 7. **Wynik.** Lista przelewów (konto, kwota w walucie konta, instrument, ilość), jedno zdanie uzasadnienia per klasa i alerty.
 
-### Pasma i alerty
+### Tolerancja udziału i alerty
 
-- Pasmo ±5 pp dla klas z wagą ≥ 20%, ±25% wagi dla mniejszych (złoto 5% → 3,75–6,25%).
+- Tolerancja udziału (w kodzie „band”): domyślnie ±5 pp dla klas z wagą ≥ 20%, ±25% wagi dla mniejszych (złoto 5% → 3,75–6,25%); w ustawieniach planu można ją nadpisać jako ± pp dla dowolnej klasy, obok suwaka wagi.
 - Dopóki żadne mieszkanie nie jest liczone do rebalancingu, pasma liczone są od wag renormalizowanych bez nieruchomości (akcje 45% → 60%).
 - Sprzedaży nie ma, więc alert pojawia się, gdy klasa jest poza pasmem, a szacowana liczba miesięcy do powrotu (luka / miesięczna wpłata) przekracza konfigurowalny próg, np. 12.
 - Sprawdzanie pasm: przy każdym planie; pełny przegląd raz w roku.
@@ -145,14 +145,15 @@ Sercem aplikacji jest czysta funkcja `planMonth(state, surplus) → Plan`. Nie z
 | HouseholdMember | householdId, userId, role (OWNER / MEMBER) | User należy do jednego gospodarstwa |
 | HouseholdInvite | id, householdId, email, tokenHash, expiresAt, acceptedAt | Jednorazowe, 7 dni |
 | Household | id, name, baseCurrency (PLN) | Jedno gospodarstwo = jeden zestaw wag |
-| Person | id, householdId, userId?, name, isEntrepreneur | Flaga decyduje o limicie IKZE |
-| Account | id, personId, broker, wrapper (IKE / IKE\_OBLIGACJE / IKZE / IKZE\_OBLIGACJE / REGULAR / CASH), currency, assetClassId | IKE/IKZE wymuszają PLN; max jedno IKE\* i jedno IKZE\* na osobę |
-| AssetClass | id, householdId, kind, name, targetWeight, bandAbs, bandRel, benchmarkInstrumentId, purchaseInstrumentId, accountQueue\[\] | Wagi w punktach bazowych (4500 = 45%); jedna klasa danego rodzaju na gospodarstwo |
+| Person | id, householdId, userId?, name | Właściciel kont; limity liczone per osoba |
+| Account | id, personId, broker, wrapper (IKE / IKE\_OBLIGACJE / IKZE / IKZE\_OBLIGACJE / REGULAR / CASH), currency, assetKind, ikzeEntrepreneur | Zarządzane na stronie klasy aktywów; IKE/IKZE wymuszają PLN; max jedno IKE\* i jedno IKZE\* na osobę; flaga przedsiębiorcy decyduje o limicie IKZE. Platformy: akcje/złoto XTB, mBank eMakler, Bossa (złoto też BullionVault); obligacje PKO BP |
+| AssetClass | id, householdId, kind, name, targetWeight, bandAbs (tolerancja), bandRel, purchaseInstrumentId, accountQueue\[\] | Wagi w punktach bazowych (4500 = 45%); jedna klasa danego rodzaju na gospodarstwo |
 | Instrument | id, isin, ticker, type (ETF / BOND / GOLD), currency, assetKind | Globalne jak notowania, więc wskazują rodzaj klasy, nie klasę gospodarstwa |
 | Transaction | id, accountId, instrumentId, date, type (BUY / DEPOSIT / FEE / INTEREST), quantity, priceMinor, fxRate, amountMinor, source (manual / import / plan) | Brak SELL i WITHDRAW w v1 |
 | BondLot | id, accountId, series, purchaseDate, units | Wycena z oferty serii + CPI |
 | Property | id, name, usage (OWN / RENTAL), valueMinor, valuationDate, includeInRebalancing | Własne domyślnie false |
-| Mortgage | id, propertyId, balanceMinor, rate, installmentMinor | Saldo zmniejszają transakcje nadpłaty |
+| Mortgage | id, propertyId, balanceMinor, rateBp, installmentMinor, installmentType (EQUAL / DECREASING), overpaymentMode (SHORTEN / LOWER\_INSTALLMENT), endMonth | Bieżący stan = kopia ostatniego wpisu MortgageEntry |
+| MortgageEntry | id, mortgageId, planId?, kind (BANK / INSTALLMENT / OVERPAYMENT), date, amount, principal, interest, interestSaved, balanceAfter, rateBp, installment, endMonth, seq | Historia kredytu: stan z banku (po racie z danego miesiąca) albo rata i nadpłata księgowane przy „Wykonane”; cofnięcie/edycja miesiąca usuwa jego wpisy |
 | RentalIncome | propertyId, rentMinor, costsMinor, vacancyMonthsPerYear | „Dywidenda” netto |
 | PropertyGoal | id, name, targetDownPaymentMinor, accountId, status (ACTIVE / DONE) | Konto celu poza rebalancingiem |
 | Settings | householdId, monthlyExpensesMinor, cushionMonths, currentRentMinor, acceleratorTable, alertMonthsThreshold, etfRounding | Czynsz tylko przy braku własnego mieszkania |

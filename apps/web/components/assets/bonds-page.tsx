@@ -1,17 +1,19 @@
 import type { RouterOutputs } from "@pip/api";
-import { Settings2 } from "lucide-react";
-import Link from "next/link";
-import { ClassPosition } from "@/components/assets/class-position";
-import {
-  type AccountOption,
-  AddTransactionDialog,
-  TransactionsTable,
-} from "@/components/assets/transactions";
+import { AccountsCard } from "@/components/assets/accounts-card";
+import { AddBondsDialog } from "@/components/assets/add-bonds-dialog";
+import { ClassHead, type HeadFact } from "@/components/assets/class-head";
+import { TransactionsTable } from "@/components/assets/transactions";
 import { MaturityChart } from "@/components/charts/maturity-chart";
 import { ValueChart } from "@/components/charts/value-chart";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -21,42 +23,46 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CLASSES, classSettingsPath } from "@/lib/classes";
-import { formatIsoDate, formatPln } from "@/lib/format";
+import { CLASSES } from "@/lib/classes";
+import { formatIsoDate, formatPln, todayIso } from "@/lib/format";
 import { serverApi } from "@/lib/session";
 
 type Overview = Extract<RouterOutputs["assets"]["overview"], { kind: "BONDS" }>;
 
 export async function BondsPage() {
   const api = await serverApi();
-  const [overviewRaw, transactions, instruments, settings] = await Promise.all([
+  const [overviewRaw, transactions, settings, accountOptions] = await Promise.all([
     api.assets.overview({ kind: "BONDS" }),
     api.transactions.list({ assetKind: "BONDS" }),
-    api.instruments.list({ assetKind: "BONDS" }),
     api.settings.get(),
+    api.accounts.options(),
   ]);
   if (overviewRaw.kind !== "BONDS") return null;
   const overview: Overview = overviewRaw;
-  const queueIds = new Set(overview.queue.map((a) => a.id));
-  const queueRank = (id: string) => {
-    const index = overview.queue.findIndex((a) => a.id === id);
-    return index === -1 ? overview.queue.length : index;
-  };
-  const accounts: AccountOption[] = settings.persons
-    .flatMap((p) => p.accounts.map((a) => ({ ...a, personName: p.name })))
-    .filter((a) => a.wrapper !== "CASH")
-    .map((a) => ({
-      id: a.id,
-      name: a.name,
-      broker: a.broker,
-      currency: a.currency,
-      personName: a.personName,
-      inQueue: queueIds.has(a.id),
-    }))
-    .sort((a, b) => queueRank(a.id) - queueRank(b.id));
   const showPerson = settings.persons.length > 1;
   const totalNominal = overview.lots.reduce((sum, lot) => sum + lot.nominalMinor, 0n);
   const totalUnits = overview.lots.reduce((sum, lot) => sum + lot.units, 0);
+  const today = todayIso();
+  const nextLot = overview.lots.filter((lot) => lot.maturityDate >= today)[0];
+  const facts: HeadFact[] = [
+    {
+      label: "Serie",
+      value: String(overview.lots.length),
+      tone: overview.lots.length === 0 ? "muted" : "default",
+    },
+    {
+      label: "Najbliższy wykup",
+      value: nextLot
+        ? `${formatIsoDate(nextLot.maturityDate)} · ${formatPln(nextLot.nominalMinor)}`
+        : "brak",
+      tone: nextLot ? "default" : "muted",
+    },
+    {
+      label: "Instrument",
+      value: overview.purchaseInstrument?.name ?? "nie ustawiono",
+      tone: overview.purchaseInstrument ? "default" : "muted",
+    },
+  ];
 
   return (
     <>
@@ -64,30 +70,11 @@ export async function BondsPage() {
         eyebrow="Klasa aktywów"
         title={overview.name}
         lead="Detaliczne obligacje skarbowe: każda seria wraca po terminie wykupu, a wpłaty wyznaczają drabinkę."
-        actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={<Link href={classSettingsPath("BONDS")} />}
-            >
-              <Settings2 data-icon="inline-start" />
-              Ustawienia klasy
-            </Button>
-            <AddTransactionDialog
-              accounts={accounts}
-              instruments={instruments}
-              defaultInstrumentId={overview.purchaseInstrument?.id ?? null}
-              bonds
-            />
-          </>
-        }
       />
 
-      <ClassPosition overview={overview} />
+      <ClassHead overview={overview} facts={facts} />
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <Card size="sm">
           <CardHeader>
             <CardTitle>Wpłaty</CardTitle>
@@ -97,7 +84,7 @@ export async function BondsPage() {
           </CardHeader>
           <CardContent>
             {overview.series.length === 0 ? (
-              <div className="flex flex-col gap-2 border-t border-border pt-4">
+              <div className="flex flex-col gap-1 border-t border-border pt-3">
                 <p className="text-sm">Jeszcze nic nie kupiono.</p>
                 <p className="text-sm text-muted-foreground">
                   Pierwszy punkt pojawi się po zaksięgowaniu planu albo po ręcznym dodaniu zakupu.
@@ -128,10 +115,26 @@ export async function BondsPage() {
         </Card>
       </div>
 
+      <AccountsCard
+        key={overview.queue.map((a) => a.id).join(",")}
+        kind="BONDS"
+        queue={overview.queue}
+        options={accountOptions.BONDS}
+        persons={settings.persons.map((p) => ({ id: p.id, name: p.name }))}
+        purchaseInstrumentId={overview.purchaseInstrument?.id ?? null}
+        accountFill={settings.accountFill}
+      />
+
       <Card size="sm">
         <CardHeader>
           <CardTitle>Serie</CardTitle>
-          <CardDescription>Każdy zakup to osobna seria z własnym terminem wykupu.</CardDescription>
+          <CardDescription>
+            Każdy zakup to osobna seria z własnym terminem wykupu. Posiadane obligacje przepiszesz z
+            serwisu jak ze „Stanu rachunku rejestrowego”.
+          </CardDescription>
+          <CardAction>
+            <AddBondsDialog accounts={overview.queue} />
+          </CardAction>
         </CardHeader>
         <CardContent>
           {overview.lots.length === 0 ? (
@@ -196,7 +199,10 @@ export async function BondsPage() {
       <Card size="sm">
         <CardHeader>
           <CardTitle>Transakcje</CardTitle>
-          <CardDescription>Zakupy z planu i dodane ręcznie; ręczne można usunąć.</CardDescription>
+          <CardDescription>
+            Zakupy z planu i stan początkowy przepisany z serwisu obligacji; wpisy spoza planu można
+            usunąć.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <TransactionsTable transactions={transactions} showPerson={showPerson} />

@@ -73,8 +73,9 @@ Two families, both self-hosted via `next/font/google`, subsets `latin` + `latin-
 
 | Level        | Utility                                   | Size/Line | Weight | Usage |
 |--------------|-------------------------------------------|-----------|--------|-------|
-| Hero amount  | `font-heading text-4xl md:text-5xl`        | 36–48/1.1 | 500    | surplus, cushion target |
-| Page title   | `font-heading text-3xl`                    | 30/36     | 500    | one per page |
+| Hero amount  | `font-heading text-4xl`                    | 36/1.1    | 500    | household total (dashboard) |
+| Card amount  | `font-heading text-3xl` / `text-2xl`       | 30 / 24   | 500    | month total, class value |
+| Page title   | `font-heading text-2xl leading-tight`      | 24/28     | 500    | one per page |
 | Card title   | `CardTitle` (serif, uppercase, tracked)    | 18/28     | 600    | section headers |
 | Lead         | `text-base`                                | 16/24     | 400    | page lead paragraphs |
 | Body         | `text-sm`                                  | 14/20     | 400    | default |
@@ -88,7 +89,9 @@ Body copy never below 14px; `Badge` is the single sanctioned exception for 2–5
 4px base (Tailwind spacing scale). Named steps: `1`=4, `2`=8, `3`=12, `4`=16, `6`=24, `8`=32,
 `12`=48, `16`=64. Cards use `--card-spacing` (32 default, 20 for `size="sm"`).
 
-- Page gutter `px-4 sm:px-6`; vertical rhythm between sections `gap-8` (mobile) / `gap-12`.
+- Page gutter `px-4 sm:px-6`; main column `py-5 sm:py-6`, sections `gap-6`, card grids `gap-4`.
+  The header is a single 48px row (wordmark · household · nav · profile link); page headers are
+  eyebrow · 24px title · 14px lead so the top of a page never takes more than ~150px.
 - Max widths: auth `max-w-sm`; wizard `max-w-3xl`; plan page `max-w-6xl`.
 - Grids use `minmax(min(16rem,100%),1fr)` style tracks via Tailwind `grid-cols-[…]` or
   `sm:grid-cols-2`, never bare `minmax(16rem,1fr)`.
@@ -114,26 +117,92 @@ Project primitives (`components/`):
   (hatched muted track with caption), populated. Decorative strip is `aria-hidden`; legend carries
   the data.
 - `AuthShell` / `AppHeader` — page frames for the auth pages and the signed-in app. `AppHeader`
-  carries `MainNav` (desktop: letterspaced links with a 2px primary underline for the active route)
-  and `MobileNav` (Sheet from the left with a primary left-rule on the active item).
-- `PageHeader` — eyebrow (small caps) · Fraunces title · lead · right-aligned actions.
-- `WeightGauge` — current weight vs. band on a 0 → scale axis: tinted band span in the class
-  colour, hairline target tick, solid marker; marker and band label turn `--warning` outside the
-  band. Used on the dashboard class cards and every class page.
-- `ClassPosition` — class page hero: value (hero Stat), gauge, account queue, optional drawdown
-  Badge; `extra` slot for class-specific totals (real estate).
+  is one 48px row: `MainNav` (desktop: letterspaced links with a 2px primary underline for the
+  active route; Pulpit · Plan · Akcje · Obligacje · Nieruchomości · Złoto), `MobileNav` (Sheet from
+  the left, adds Profil) and the user name linking to `/profil` (sign-out lives there).
+- `PageHeader` — eyebrow (small caps) · Fraunces 2xl title · 14px lead · right-aligned actions.
+- `WeightGauge` — current share vs. its *tolerance range* ("tolerancja udziału") on a 0 → scale
+  axis: tinted span in the class colour, hairline target tick, solid marker; marker and label turn
+  `--warning` outside the range. The concept is never called "pasmo" in the UI.
+- `ClassHead` — class page position in one line: value (3xl) · share / target / tolerance · a
+  `dl` of class facts (contributed, result, drawdown, last quote, next maturity, equity, LTV…).
+- `ClassCards` (dashboard) — four `size="sm"` cards in a 2-column grid (1 on mobile): title link
+  (stretched), target + tolerance, value / contributed + result, gauge, a 2-column `dl` of facts
+  incl. this month's amount, then `LimitBar`s of the class's own IKE/IKZE accounts.
+- `PlanCard` (dashboard) — month title, total, `AllocationStrip`, the cushion (balance / target
+  `Progress`) and the actions: `ExecuteDialog` + link to the plan; settings icon → plan settings.
+- `LimitBar` — `Progress` with a `Badge` tag or a muted caption, optional owner, "used / limit".
+- `AccountsCard` (class pages) — the class's accounts in fill order: ordinal in Fraunces, name,
+  wrapper `Badge` (`wrapperTag`: "IKZE · przeds." for the entrepreneur limit), platform · owner,
+  `LimitBar`; up/down reorder saves immediately; edit (name, platform, IKZE type) and delete
+  dialogs; add dialog (type → platform → owner when >1 person → optional name).
+- `InstrumentCard` (equity) — current instrument on top, `SymbolSearch` below.
+- `SymbolSearch` — debounced (300 ms) Yahoo search: `InputGroup` with a search/spinner addon,
+  hairline result rows (name · type `Badge` · symbol · exchange); choosing a row is a `button`.
 - Charts (`components/charts`, recharts via shadcn `ChartContainer`): `ValueChart` (value line
-  over a stepped contributions area in `--class-cushion`), `MarketChart` (area in the class colour,
-  1R/5L/Max `ToggleGroup`, last quote line), `MaturityChart` (bars per year). Tooltips are the
-  project `ChartTooltipFrame` (popover surface, small-caps title, swatch rows) and format amounts
-  from the original bigint; only axis ticks are formatted from floats.
-- Dialogs: `Dialog` for forms (transaction, property, goal, ETF), `AlertDialog` for every
-  irreversible action (book month, delete). Footer order: outline "Anuluj" · primary action.
+  over a stepped contributions area in `--class-cushion`), `MarketChart` (area in the class colour
+  on a numeric time axis, 1R/5L/Max `ToggleGroup`, dashed purchase lines + dots at the purchase
+  date with a hover frame, "Porównaj z…" second line in `--class-cushion` with both lines
+  normalised to % from the start of the range), `MaturityChart` (bars per year),
+  `ContributionsChart` (monthly bars in `--class-cushion` + cumulative line in `--primary`).
+  Tooltips are the project `ChartTooltipFrame` (popover surface, small-caps title, swatch rows)
+  and format amounts from the original bigint; only axis ticks are formatted from floats.
+- Dialogs: `Dialog` for forms (transaction, property, goal, account), `AlertDialog` for every
+  irreversible action (book month, delete, remove person). Footer order: outline "Anuluj" ·
+  primary action. `ExecuteDialog` ("Wykonane") is shared by the dashboard and the plan page.
 - Forms: one `Card` per concern, `FieldGroup` inside, primary "Zapisz …" button with an inline
-  `role="status"` "Zapisano." confirmation; server errors as `Alert variant="destructive"`.
-- Ledger row pattern (`PlanResult`): kind label (small caps) · account line · instrument/quantity
-  in muted ink · right-aligned amount in Fraunces 2xl; rows separated by hairlines.
-- Limit bar pattern (`Overview`): `Progress` with a `Badge` (IKE/IKZE) and "used / limit" value.
+  `role="status"` "Zapisano." confirmation; server errors as `Alert variant="destructive"` or
+  `FieldError`. Weight sliders carry a `± pp` tolerance `InputGroup` and the resulting range.
+- Correction control (plan page): `Slider` over 0 … 2× the contribution (step 100 zł) so the
+  regular amount sits at the centre tick ("stała wpłata"), beside an exact `MoneyInput` and a
+  ghost reset; the signed difference reads "korekta −1 500,00 zł" (`formatAdjustment`, amber
+  below / primary above). The plan recomputes after a 300 ms debounce and fades while stale.
+- `PlanCard` spans both class-card rows on `lg`: strip without legend, the `PlanLedger` (container
+  query stacks its rows below `@xl`), then the cushion and actions pinned with `mt-auto`.
+- Account fill mode (plan settings, first after the weights): two `RadioGroup` cards — "Równomiernie
+  na wszystkie konta" (EVEN: each IKE/IKZE up to 1/12 of its yearly limit per month, the rest to
+  the regular account) / "Po kolei" (SEQUENTIAL). `AccountsCard` mirrors it: ordinals in
+  sequential mode, "+" for tax accounts and "→" for the regular ones in EVEN, and each tax
+  account's `LimitBar` caption reads "miesięcznie do X zł" (limit ÷ 12).
+- Real estate is one flow card „Mieszkania” with a stage indicator (Cel › Kupione › Nadpłaty) and
+  two numbered sections, each with a one-line note on what the plan does there: „1 · Zbieram na
+  wkład własny” (goal rows: name, „Zasilany z planu” Badge, `Progress`, „Edytuj” + primary
+  „Kupione”) and „2 · Posiadane” (bordered property tiles: usage/financing/portfolio Badges,
+  value + equity/LTV, equity-vs-debt bar, mortgage and rent `dl`s). „Kupione” opens the shared
+  property form (`PropertyFields`) prefilled from the goal — usage Wynajem, financing Hipoteka,
+  price → suggested mortgage balance = price − saved — and submits `realEstate.completeGoal`.
+  The „Liczone do portfela” `Switch` carries the fixed explanation copy.
+- Mortgage („harmonogram + korekta z banku”): `MortgageTermsFields` (saldo · oprocentowanie ·
+  rata · ostatnia rata as `type="month"`) with a live `FieldDescription` hint computed by
+  `@pip/engine` `completeTerms` („rata ≈ 4 168,66 zł” / „spłata do lis 2051 (301 rat)”), used by
+  the property form (plus Równe/Malejące and Skraca okres/Obniża ratę radios) and by the
+  „Aktualizuj z banku” `Dialog`. The property tile shows `MortgageSummary` (saldo · rata · spłata
+  „kwi 2051 · 294 rat” · zaoszczędzone odsetki in `--primary`) and `MortgagePanel`: the bank
+  button, paid/remaining interest, and a `<details>` with `MortgageChart` (booked balance solid,
+  projection dashed, both in `--class-real-estate`) and the credit history list (date · kind
+  `Badge` · amount; interest/principal/saved/balance/installment on a muted second line; delete
+  only on „Stan z banku”). Goal rows and the dashboard legend carry the down-payment ETA
+  („zbierzesz w 54 mies. — marzec 2031”).
+- Instrument changes and out-of-plan purchases live behind secondary buttons ("Edytuj",
+  "Dodaj wcześniejszy zakup") that open a `Dialog`; page headers carry no primary action.
+- Opening balances: `AddPositionDialog` („Dodaj posiadane”, Pozycje card of Akcje/Złoto) takes
+  account · instrument · quantity (szt./g) · average price · „stan na” date · deposits this year
+  (tax accounts only) and previews koszt / wartość / zysk in a 3-column `dl`; the holdings table
+  shows Ilość · Śr. cena · Kurs · Koszt · Wartość · Zysk (zł and %). `AddBondsDialog` („Dodaj
+  posiadane obligacje”, Serie card) is an editable statement table: # · Emisja (uppercase input
+  with the live „ROD · 12 lat” hint) · Liczba · Wartość nominalna (computed) · Data wykupu · Data
+  zakupu (computed) · remove, a „Razem” footer with „Dodaj wiersz”, Enter in the last row adds a
+  row, row errors (incl. API „Wiersz N”) tint the row `bg-destructive/5`. OPENING transactions
+  carry the „Stan początkowy” tag.
+- Booked months: `UndoMonthDialog` ("Cofnij księgowanie", outline + `AlertDialog`, destructive
+  confirm) appears wherever the newest booked month is shown (plan card, booked /plan, profile);
+  `EditMonthDialog` ("Edytuj" on every history month) is a `Dialog` with the booking date and one
+  hairline row per line: ledger label · `MoneyInput` in the account currency · quantity
+  `InputGroup` (whole units for EDO) · remove (row dims, label struck, "Przywróć" restores).
+- Ledger row pattern (`PlanLedger`): class dot · kind (small caps) · account · platform · owner ·
+  what to buy + quantity in muted ink · right-aligned 14px amount; hairline rows, ~40px each, so a
+  6-row plan with its footer fits 1440×900. Alerts are one-line amber/red rows, the rationale a
+  `<details>`. Reused on the profile's month history inside `<details>` rows.
 
 States required everywhere: default, hover (interactive only), focus-visible (ring 2px `--ring`
 /30), disabled (opacity 50), invalid (destructive baseline + FieldError), loading (Spinner in
@@ -149,12 +218,15 @@ button, Skeleton rows), empty (caption in muted ink), error (Alert destructive).
 
 ## 7. Responsive behavior
 
-- 375: single column; ledger rows stack kind/account above amount; allocation legend wraps.
-- 768: overview becomes 2 columns; ledger rows in one line.
-- 1280: dashboard hero 2:1 with the month card, 4 class cards in a row, 3-column bottom row;
-  class pages put the two charts side by side (`xl:grid-cols-2`); settings is a 3:2 split.
-- Header: nav links hide below `md` (Sheet menu button appears); user name/email show from `lg`;
-  the sign-out label collapses to the icon below `sm`.
+- 375: single column; ledger rows stack detail under the account line; allocation legend wraps;
+  the plan card precedes the class cards.
+- 768: class cards in 2 columns; ledger rows in one line; weight rows put the tolerance input
+  beside the slider.
+- 1024+: dashboard = full-width total strip, then 2×2 class cards beside the month card (2:1);
+  class pages put the two charts side by side (`xl:grid-cols-2`) and accounts beside the
+  instrument card (3:2); plan settings is a 3:2 split.
+- Header: nav links hide below `md` (Sheet menu button appears); the household name shows from
+  `lg`; the profile link collapses to its icon below `sm`.
 - Full-height surfaces use `min-h-dvh`, never `h-screen`.
 
 ## 8. Accessibility & accepted debt

@@ -1,20 +1,28 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
-import { currentUser } from "@/lib/current-user";
-import { serverApi } from "@/lib/session";
+import { currentSession } from "@/lib/session";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Logowanie" };
 
 export default async function LoginPage() {
-  const api = await serverApi();
-  const { hasUsers } = await api.household.setupStatus();
-  if (!hasUsers) redirect("/signup");
-  if (await currentUser()) redirect("/");
+  if (await currentSession()) redirect("/");
 
   return (
-    <AuthShell title="Zaloguj się" lead="Wróć do księgi swojego gospodarstwa.">
+    <AuthShell
+      title="Zaloguj się"
+      lead="Wróć do księgi swojego gospodarstwa."
+      footer={
+        <>
+          Nie masz konta?{" "}
+          <Link href="/signup" className="font-medium text-primary underline underline-offset-4">
+            Załóż je
+          </Link>
+        </>
+      }
+    >
       <LoginForm />
     </AuthShell>
   );

@@ -1,5 +1,12 @@
 export { acceleratorMultiplierBp, DEFAULT_ACCELERATOR_TABLE } from "./accelerator";
-export { bandFor, renormalizedWeights, weightBp } from "./bands";
+export {
+  bandContext,
+  bandFor,
+  type ClassPosition,
+  classPositions,
+  renormalizedWeights,
+  weightBp,
+} from "./bands";
 export {
   type AnnualLimits,
   annualLimitMinor,
@@ -10,3 +17,16 @@ export {
 } from "./limits";
 export { planMonth } from "./plan-month";
 export type * from "./types";
+export {
+  asOf,
+  drawdownBp,
+  type FxPoint,
+  type InstrumentQuotes,
+  type PricePoint,
+  type Purchase,
+  parseQuantity,
+  purchaseValueAt,
+  QUANTITY_DIGITS,
+  type ValuePoint,
+  valueSeries,
+} from "./valuation";

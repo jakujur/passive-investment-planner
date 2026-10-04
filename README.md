@@ -12,7 +12,10 @@ Pełna specyfikacja: [docs/spec.md](docs/spec.md).
 | `packages/engine`: `planMonth`, pasma, accelerator, limity IKE/IKZE, walidacja kont osoby | gotowe, z testami scenariuszy z poradnika |
 | `packages/db`: schemat Drizzle + migracja początkowa | gotowe |
 | `packages/auth`: Better Auth (e-mail + hasło, zamknięta rejestracja) | gotowe, bez UI |
-| `packages/api` (tRPC), `apps/web` (Next.js + shadcn), `apps/worker`, `packages/sources` | do zrobienia |
+| `packages/api`: tRPC — gospodarstwo, plan i księgowanie miesiąca, klasy aktywów, transakcje, instrumenty, nieruchomości, notowania, ustawienia | gotowe |
+| `packages/sources`: kursy NBP, cena złota NBP, notowania ETF (Yahoo); odświeżane przyciskiem w aplikacji | gotowe |
+| `apps/web`: rejestracja, kreator, pulpit, plan miesiąca, strony i ustawienia klas z wykresami, ustawienia globalne | gotowe |
+| `apps/worker` (cron), wycena EDO z CPI, oferta obligacji, import XTB, zaproszenia | do zrobienia |
 
 ## Wymagania
 
@@ -62,7 +65,7 @@ packages/
 - **Pieniądze** to zawsze `bigint` w groszach/centach; wagi w punktach bazowych (4500 = 45%), kursy walut × 10⁶. Żadnej arytmetyki na `number` dla kwot — używaj `@pip/money`.
 - **Silnik jest czysty.** `planMonth(state, surplus)` nie zna bazy ani sieci i nie wie, ile osób jest w gospodarstwie — widzi tylko konta, ich kolejki i pozostałe limity.
 - **Jedno IKE i jedno IKZE na osobę.** IKE-Obligacje / IKZE-Obligacje zajmują ten sam slot. Pilnuje tego unikalny indeks w bazie i `validatePersonAccounts` w silniku; IKE/IKZE tylko w PLN (constraint `CHECK`).
-- **Rejestracja zamknięta.** Pierwszy użytkownik zakłada instancję, kolejni tylko z ważnym zaproszeniem na swój e-mail (hook `user.create.before` w `packages/auth`).
+- **Rejestracja otwarta.** Każdy użytkownik zakłada własne gospodarstwo; każde zapytanie tRPC jest ograniczone do gospodarstwa użytkownika (`householdProcedure`).
 - **Transakcje są źródłem prawdy.** Wartości, wagi i zyski są wyliczane, nigdy zapisywane.
 
 ## Silnik w skrócie

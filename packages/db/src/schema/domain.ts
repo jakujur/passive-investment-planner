@@ -1,3 +1,4 @@
+import type { Currency } from "@pip/money";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -16,7 +17,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Currency } from "@pip/money";
 import { user } from "./auth";
 
 /** Money columns: smallest currency unit, read as JS bigint. */
@@ -105,6 +105,8 @@ export const instrument = pgTable("instrument", {
   type: instrumentType().notNull(),
   assetKind: assetKind().notNull(),
   currency: text().$type<Currency>().notNull(),
+  /** Symbol at the daily-quotes source (Yahoo chart API), e.g. `IUSQ.DE`; gold is priced by NBP. */
+  quoteSymbol: text(),
 });
 
 export const assetClass = pgTable(
@@ -187,6 +189,8 @@ export const bondLot = pgTable("bond_lot", {
   accountId: uuid()
     .notNull()
     .references(() => account.id, { onDelete: "cascade" }),
+  /** The BUY that created the lot; deleting the transaction removes the lot. */
+  transactionId: uuid().references(() => transaction.id, { onDelete: "cascade" }),
   series: text().notNull(),
   purchaseDate: date().notNull(),
   units: integer().notNull(),
@@ -237,6 +241,8 @@ export const propertyGoal = pgTable("property_goal", {
     .notNull()
     .references(() => account.id),
   status: goalStatus().notNull().default("ACTIVE"),
+  /** The oldest active goal is the one the monthly plan funds. */
+  createdAt: createdAt(),
 });
 
 // ── Settings & plans ─────────────────────────────────────────────────────────
@@ -246,6 +252,8 @@ export const settings = pgTable("settings", {
     .primaryKey()
     .references(() => household.id, { onDelete: "cascade" }),
   monthlyExpensesMinor: minor().notNull().default(sql`0`),
+  /** Regular monthly surplus the plan is computed for; a month can add an extra amount on top. */
+  monthlyContributionMinor: minor().notNull().default(sql`0`),
   cushionMonths: integer().notNull().default(9),
   cushionAccountId: uuid().references(() => account.id),
   cushionSurplusShareBp: integer().notNull().default(10_000),
@@ -266,15 +274,22 @@ export const plan = pgTable(
     /** `YYYY-MM` */
     month: text().notNull(),
     surplusMinor: minor().notNull(),
+    /** Part of `surplusMinor` paid on top of the regular monthly contribution. */
+    extraMinor: minor().notNull().default(sql`0`),
     carryInMinor: minor().notNull().default(sql`0`),
     carryOutMinor: minor().notNull().default(sql`0`),
-    /** Engine output with bigint amounts serialized as strings. */
+    /** `{ plan, labels }` serialized with superjson, so bigints survive. */
     result: jsonb().notNull(),
     status: planStatus().notNull().default("DRAFT"),
     createdAt: createdAt(),
     executedAt: timestamp({ withTimezone: true }),
   },
-  (t) => [index().on(t.householdId, t.month)],
+  (t) => [
+    index().on(t.householdId, t.month),
+    uniqueIndex("plan_one_done_per_month")
+      .on(t.householdId, t.month)
+      .where(sql`${t.status} = 'DONE'`),
+  ],
 );
 
 // ── Market data (global, written by the worker) ──────────────────────────────

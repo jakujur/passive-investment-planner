@@ -1,22 +1,27 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
-import { currentUser } from "@/lib/current-user";
-import { serverApi } from "@/lib/session";
+import { currentSession } from "@/lib/session";
 import { SignupForm } from "./signup-form";
 
-export const metadata: Metadata = { title: "Pierwsze konto" };
+export const metadata: Metadata = { title: "Rejestracja" };
 
 export default async function SignupPage() {
-  const api = await serverApi();
-  const { hasUsers } = await api.household.setupStatus();
-  if (hasUsers) redirect("/login");
-  if (await currentUser()) redirect("/");
+  if (await currentSession()) redirect("/");
 
   return (
     <AuthShell
-      title="Załóż pierwsze konto"
-      lead="Ta instancja jest jeszcze pusta. Pierwsze konto zostaje właścicielem gospodarstwa."
+      title="Załóż konto"
+      lead="Po rejestracji ustawisz własne gospodarstwo: układ kont, osoby i poduszkę."
+      footer={
+        <>
+          Masz już konto?{" "}
+          <Link href="/login" className="font-medium text-primary underline underline-offset-4">
+            Zaloguj się
+          </Link>
+        </>
+      }
     >
       <SignupForm />
     </AuthShell>

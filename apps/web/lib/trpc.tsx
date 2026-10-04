@@ -11,7 +11,11 @@ export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();
 
 export function TRPCReactProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } }),
+    () =>
+      new QueryClient({
+        // Inputs carry bigints, which the default JSON.stringify key hash cannot serialize.
+        defaultOptions: { queries: { staleTime: 30_000, queryKeyHashFn: superjson.stringify } },
+      }),
   );
   const [trpcClient] = useState(() =>
     createTRPCClient<AppRouter>({

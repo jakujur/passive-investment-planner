@@ -11,7 +11,7 @@ import {
   toDecimalString,
 } from "@pip/money";
 import { acceleratorMultiplierBp } from "./accelerator";
-import { bandFor, renormalizedWeights, weightBp } from "./bands";
+import { bandContext, weightBp } from "./bands";
 import type {
   Alert,
   Band,
@@ -41,14 +41,9 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
 
   const realEstate = state.classes.find((c) => c.kind === "REAL_ESTATE");
   const investClasses = state.classes.filter((c) => c.kind !== "REAL_ESTATE");
-  // Until a property is counted, the portfolio is equities/bonds/gold only, so bands use renormalized weights.
-  const realEstateCounted = (realEstate?.valueMinor ?? 0n) > 0n;
-  const bandClasses = realEstateCounted ? state.classes : investClasses;
-  const bandWeights = renormalizedWeights(bandClasses);
-  const bands = new Map(
-    bandClasses.map((c) => [c.id, bandFor(bandWeights.get(c.id) ?? 0, c)] as const),
+  const { realEstateCounted, bandClasses, bandWeights, bands, bandTotal } = bandContext(
+    state.classes,
   );
-  const bandTotal = sumBig(bandClasses.map((c) => c.valueMinor));
 
   // 1. Cushion
   const { cushion } = state;

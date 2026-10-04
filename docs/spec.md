@@ -41,7 +41,7 @@ Konsekwencje w UI dla singla: jeden zestaw pasków limitów, brak podziału „p
 ## Uwierzytelnianie i autoryzacja
 
 - **Biblioteka:** Better Auth (adapter Drizzle, ta sama baza Postgres). Logowanie e-mail + hasło, sesja w ciasteczku httpOnly, `secure`, `sameSite=lax`. Hasło min. 12 znaków, wbudowany rate limit logowania.
-- **Rejestracja zamknięta.** Pierwszy użytkownik w pustej instancji zakłada konto i gospodarstwo (bootstrap). Kolejni wyłącznie przez zaproszenie od członka gospodarstwa: jednorazowy link ważny 7 dni, przypisany do adresu e-mail.
+- **Rejestracja otwarta** (e-mail + hasło). Każdy nowy użytkownik zakłada własne gospodarstwo w kreatorze. Dołączenie do istniejącego gospodarstwa (małżonek) — przez zaproszenie: jednorazowy link ważny 7 dni, przypisany do adresu e-mail (etap 5).
 - **User ≠ Person.** `User` to login, `Person` to podmiot podatkowy z limitami. `Person.userId` jest opcjonalne — jedna osoba może prowadzić finanse całego gospodarstwa, a małżonek nie musi mieć konta.
 - **Role:** `OWNER` (zaprasza i usuwa członków) i `MEMBER`. Obie role mają pełny dostęp do danych finansowych gospodarstwa.
 - **tRPC:** `protectedProcedure` wymaga sesji; `householdProcedure` dokłada `householdId` z członkostwa. Każde zapytanie filtruje po `householdId`, a każde `id` z inputu jest sprawdzane pod kątem przynależności do gospodarstwa (brak dostępu = `NOT_FOUND`, nie `FORBIDDEN`).
@@ -54,7 +54,7 @@ Główną stroną jest dashboard. Z każdej karty klasy aktywów prowadzi link d
 ### Logowanie
 
 - Logowanie, wylogowanie, reset hasła.
-- Bootstrap pierwszego użytkownika i gospodarstwa z wyborem wariantu kont (tabela wyżej).
+- Rejestracja, potem kreator gospodarstwa: wariant kont (tabela wyżej), osoby, stała miesięczna wpłata, poduszka, opcjonalny cel na wkład własny.
 - Akceptacja zaproszenia: ustawienie hasła i dołączenie do gospodarstwa.
 
 ### Dashboard
@@ -62,7 +62,7 @@ Główną stroną jest dashboard. Z każdej karty klasy aktywów prowadzi link d
 - Wartość netto (z mieszkaniem własnym) i wartość portfela inwestycyjnego (bez niego).
 - Wykres wartości portfela na tle sumy wpłat, w stylu XTB; zysk jako XIRR, opcjonalnie linia benchmarku.
 - Karty klas: waga aktualna vs docelowa z pasmem, zysk vs indeks odniesienia, link do ustawień.
-- **Plan miesiąca:** input z nadwyżką → lista przelewów (konto, kwota, co kupić) + jedno zdanie uzasadnienia. Przycisk „wykonane” zamienia plan w transakcje.
+- **Plan miesiąca:** liczony automatycznie ze stałej miesięcznej wpłaty (ustawienia), z opcją „w tym miesiącu wpłacam więcej” → lista przelewów (konto, kwota, co kupić) + jedno zdanie uzasadnienia. Przycisk „wykonane” księguje miesiąc: serwer liczy plan ponownie i zamienia go w transakcje; jeden zaksięgowany plan na miesiąc.
 - Paski wykorzystania limitów IKE/IKZE na bieżący rok, osobno dla każdej osoby (u singla jeden zestaw).
 - Alerty: klasa poza pasmem, której nie da się naprawić nowymi wpłatami w rozsądnym czasie; koncentracja nieruchomości; nieudane pobranie danych.
 
@@ -168,7 +168,8 @@ API wszędzie, gdzie istnieje; scraper tylko tam, gdzie API brak. Każde źród�
 | Dane | Metoda | Częstotliwość | Walidacja | Gdy się nie uda |
 | --- | --- | --- | --- | --- |
 | Kursy walut | API NBP (tabela A) | Codziennie | Kurs > 0, zmiana dzienna < 10% | Ostatni znany kurs + znacznik daty |
-| Notowania ETF | Darmowe dane dzienne (do wyboru) | Codziennie | Cena > 0, zmiana dzienna < 20% | Ostatnia cena + ostrzeżenie na dashboardzie |
+| Notowania ETF | Yahoo chart API (nieoficjalne; Stooq blokuje pobieranie wyzwaniem JS) | Codziennie | Cena > 0, zmiana dzienna < 20% | Ostatnia cena + ostrzeżenie na dashboardzie |
+| Cena złota | API NBP (cenyzlota, PLN za gram) | Codziennie | Cena > 0, zmiana dzienna < 20% | Ostatnia cena + ostrzeżenie na dashboardzie |
 | CPI (wycena EDO) | API GUS lub scraper komunikatu | Miesięcznie | Zakres −10…+30% r/r | Status PENDING\_REVIEW, wycena na ostatnim CPI |
 | Oferta obligacji detalicznych | Scraper strony z ofertą MF | Miesięcznie | Znane typy serii, oprocentowanie 0–15% | Komunikat „nie udało się pobrać” + ręczne wpisanie |
 | Limity IKE/IKZE | Scraper komunikatu MRPiPS na gov.pl | Raz w roku (grudzień) + na żądanie | Limit w zakresie 10–60 tys., zmiana r/r < 20% | Komunikat „nie udało się pobrać” + formularz własnych wartości |

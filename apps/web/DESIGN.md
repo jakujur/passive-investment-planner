@@ -113,7 +113,24 @@ Project primitives (`components/`):
 - `AllocationStrip` — stacked horizontal segments in class colours with legend; states: empty
   (hatched muted track with caption), populated. Decorative strip is `aria-hidden`; legend carries
   the data.
-- `AuthShell` / `AppHeader` — page frames for the auth pages and the signed-in app.
+- `AuthShell` / `AppHeader` — page frames for the auth pages and the signed-in app. `AppHeader`
+  carries `MainNav` (desktop: letterspaced links with a 2px primary underline for the active route)
+  and `MobileNav` (Sheet from the left with a primary left-rule on the active item).
+- `PageHeader` — eyebrow (small caps) · Fraunces title · lead · right-aligned actions.
+- `WeightGauge` — current weight vs. band on a 0 → scale axis: tinted band span in the class
+  colour, hairline target tick, solid marker; marker and band label turn `--warning` outside the
+  band. Used on the dashboard class cards and every class page.
+- `ClassPosition` — class page hero: value (hero Stat), gauge, account queue, optional drawdown
+  Badge; `extra` slot for class-specific totals (real estate).
+- Charts (`components/charts`, recharts via shadcn `ChartContainer`): `ValueChart` (value line
+  over a stepped contributions area in `--class-cushion`), `MarketChart` (area in the class colour,
+  1R/5L/Max `ToggleGroup`, last quote line), `MaturityChart` (bars per year). Tooltips are the
+  project `ChartTooltipFrame` (popover surface, small-caps title, swatch rows) and format amounts
+  from the original bigint; only axis ticks are formatted from floats.
+- Dialogs: `Dialog` for forms (transaction, property, goal, ETF), `AlertDialog` for every
+  irreversible action (book month, delete). Footer order: outline "Anuluj" · primary action.
+- Forms: one `Card` per concern, `FieldGroup` inside, primary "Zapisz …" button with an inline
+  `role="status"` "Zapisano." confirmation; server errors as `Alert variant="destructive"`.
 - Ledger row pattern (`PlanResult`): kind label (small caps) · account line · instrument/quantity
   in muted ink · right-aligned amount in Fraunces 2xl; rows separated by hairlines.
 - Limit bar pattern (`Overview`): `Progress` with a `Badge` (IKE/IKZE) and "used / limit" value.
@@ -134,7 +151,10 @@ button, Skeleton rows), empty (caption in muted ink), error (Alert destructive).
 
 - 375: single column; ledger rows stack kind/account above amount; allocation legend wraps.
 - 768: overview becomes 2 columns; ledger rows in one line.
-- 1280: plan page 3-column overview (poduszka / portfel / limity) over the full-width plan card.
+- 1280: dashboard hero 2:1 with the month card, 4 class cards in a row, 3-column bottom row;
+  class pages put the two charts side by side (`xl:grid-cols-2`); settings is a 3:2 split.
+- Header: nav links hide below `md` (Sheet menu button appears); user name/email show from `lg`;
+  the sign-out label collapses to the icon below `sm`.
 - Full-height surfaces use `min-h-dvh`, never `h-screen`.
 
 ## 8. Accessibility & accepted debt

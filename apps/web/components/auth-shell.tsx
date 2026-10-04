@@ -4,10 +4,12 @@ import { Wordmark } from "@/components/wordmark";
 export function AuthShell({
   title,
   lead,
+  footer,
   children,
 }: {
   title: string;
   lead: string;
+  footer: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -19,6 +21,7 @@ export function AuthShell({
           <p className="text-base text-muted-foreground">{lead}</p>
         </div>
         {children}
+        <p className="border-t border-border pt-6 text-sm text-muted-foreground">{footer}</p>
       </div>
     </main>
   );

@@ -9,13 +9,13 @@ const requestContext = cache(async () => createContext({ headers: await headers(
 /** Server-side tRPC caller bound to the current request's cookies. */
 export const serverApi = cache(async () => appRouter.createCaller(await requestContext()));
 
-/** Signed-in user and their household membership; without a session goes to /login (or /signup on a fresh instance). */
+/** Better Auth session of the current request, or `null`; never calls a protected procedure. */
+export const currentSession = cache(async () => (await requestContext()).session);
+
+/** Signed-in user and their household membership; without a session goes to /login. */
 export const requireUser = cache(async () => {
+  if (!(await currentSession())) redirect("/login");
   const api = await serverApi();
-  if (!(await requestContext()).session) {
-    const { hasUsers } = await api.household.setupStatus();
-    redirect(hasUsers ? "/login" : "/signup");
-  }
   return api.household.me();
 });
 

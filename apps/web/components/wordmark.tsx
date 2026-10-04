@@ -13,7 +13,9 @@ export function Wordmark({ size = "sm", className }: { size?: "sm" | "lg"; class
         T
       </span>
       <span className="flex flex-col leading-none">
-        <span className={cn("font-heading", size === "lg" ? "text-2xl" : "text-base")}>
+        <span
+          className={cn("font-heading whitespace-nowrap", size === "lg" ? "text-2xl" : "text-base")}
+        >
           Tracker inwestycji
         </span>
         {size === "lg" && (

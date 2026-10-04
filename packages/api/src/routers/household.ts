@@ -18,6 +18,7 @@ export const bootstrapInput = z
       .array(z.object({ name: z.string().trim().min(1).max(60), isEntrepreneur: z.boolean() }))
       .min(1)
       .max(2),
+    monthlyContributionMinor: money,
     monthlyExpensesMinor: money,
     cushionMonths: z.int().min(0).max(36),
     cushionBalanceMinor: money,
@@ -167,6 +168,7 @@ export const householdRouter = router({
       const cushionAccountId = accountId.get("cushion") ?? null;
       await tx.insert(schema.settings).values({
         householdId: household.id,
+        monthlyContributionMinor: input.monthlyContributionMinor,
         monthlyExpensesMinor: input.monthlyExpensesMinor,
         cushionMonths: input.cushionMonths,
         cushionAccountId,
@@ -251,6 +253,7 @@ async function ensureInstruments(tx: Tx) {
       type: "ETF",
       assetKind: "EQUITY",
       currency: "EUR",
+      quoteSymbol: "IUSQ.DE",
     }),
     edo: await ensure({
       ticker: "EDO",
@@ -261,7 +264,7 @@ async function ensureInstruments(tx: Tx) {
     }),
     gold: await ensure({
       ticker: "XAU",
-      name: "Złoto (BullionVault)",
+      name: "Złoto (1 g)",
       type: "GOLD",
       assetKind: "GOLD",
       currency: "PLN",

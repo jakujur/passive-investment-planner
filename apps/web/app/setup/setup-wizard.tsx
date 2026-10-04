@@ -39,6 +39,7 @@ interface Draft {
   householdName: string;
   layout: LayoutId | null;
   persons: [PersonDraft, PersonDraft];
+  monthlyContribution: string;
   monthlyExpenses: string;
   cushionMonths: string;
   cushionBalance: string;
@@ -54,6 +55,7 @@ type Errors = Partial<
     | "layout"
     | "person0"
     | "person1"
+    | "monthlyContribution"
     | "monthlyExpenses"
     | "cushionMonths"
     | "cushionBalance"
@@ -79,6 +81,8 @@ function validate(draft: Draft, personCount: 1 | 2): Errors {
   if (!draft.persons[0].name.trim()) errors.person0 = "Podaj imię.";
   if (personCount === 2 && !draft.persons[1].name.trim()) errors.person1 = "Podaj imię.";
 
+  const contribution = readMoney(draft.monthlyContribution);
+  if (contribution === null || contribution < 0n) errors.monthlyContribution = MONEY_FORMAT_HINT;
   const expenses = readMoney(draft.monthlyExpenses);
   if (expenses === null || expenses < 0n) errors.monthlyExpenses = MONEY_FORMAT_HINT;
   if (parseMonths(draft.cushionMonths) === null) {
@@ -99,10 +103,13 @@ function validate(draft: Draft, personCount: 1 | 2): Errors {
 }
 
 function toInput(draft: Draft, layout: Layout): BootstrapInput | null {
+  const contribution = readMoney(draft.monthlyContribution);
   const expenses = readMoney(draft.monthlyExpenses);
   const months = parseMonths(draft.cushionMonths);
   const balance = readMoney(draft.cushionBalance);
-  if (expenses === null || months === null || balance === null) return null;
+  if (contribution === null || expenses === null || months === null || balance === null) {
+    return null;
+  }
 
   let downPayment: BootstrapInput["downPayment"] = null;
   if (draft.savesForDownPayment) {
@@ -119,6 +126,7 @@ function toInput(draft: Draft, layout: Layout): BootstrapInput | null {
       name: person.name.trim(),
       isEntrepreneur: person.isEntrepreneur,
     })),
+    monthlyContributionMinor: contribution,
     monthlyExpensesMinor: expenses,
     cushionMonths: months,
     cushionBalanceMinor: balance,
@@ -138,6 +146,7 @@ export function SetupWizard({ layouts, userName }: { layouts: Layout[]; userName
       { name: userName, isEntrepreneur: false },
       { name: "", isEntrepreneur: false },
     ],
+    monthlyContribution: "",
     monthlyExpenses: "",
     cushionMonths: String(DEFAULT_CUSHION_MONTHS),
     cushionBalance: "",
@@ -241,6 +250,25 @@ export function SetupWizard({ layouts, userName }: { layouts: Layout[]; userName
 
       <Section
         number="04"
+        title="Miesięczna wpłata"
+        lead="Stała kwota, którą co miesiąc odkładasz. Plan liczy się z niej automatycznie; w danym miesiącu możesz dopłacić więcej."
+      >
+        <Field data-invalid={errors.monthlyContribution ? true : undefined} className="sm:max-w-xs">
+          <FieldLabel htmlFor="monthlyContribution">Miesięczna wpłata</FieldLabel>
+          <MoneyInput
+            id="monthlyContribution"
+            value={draft.monthlyContribution}
+            onChange={(value) => update("monthlyContribution", value)}
+            placeholder="np. 10 000"
+            aria-invalid={errors.monthlyContribution ? true : undefined}
+          />
+          <FieldDescription>Możesz wpisać 0 i ustawić ją później.</FieldDescription>
+          <FieldError>{errors.monthlyContribution}</FieldError>
+        </Field>
+      </Section>
+
+      <Section
+        number="05"
         title="Poduszka finansowa"
         lead="Zanim nadwyżka trafi do inwestycji, plan dopełnia poduszkę do celu."
       >
@@ -305,7 +333,7 @@ export function SetupWizard({ layouts, userName }: { layouts: Layout[]; userName
       </Section>
 
       <Section
-        number="05"
+        number="06"
         title="Wkład własny"
         lead="Opcjonalnie. Część nadwyżki przypisana nieruchomościom trafia na ten cel zamiast do portfela."
       >

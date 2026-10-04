@@ -4,10 +4,10 @@ import { AlertTriangle, CircleAlert } from "lucide-react";
 import { AllocationStrip, type Segment } from "@/components/allocation-strip";
 import { Stat } from "@/components/stat";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { formatBand, formatBp, SEGMENT_BG, type SegmentTone } from "@/lib/format";
+import { formatBand, formatBp, formatQuantity, SEGMENT_BG, type SegmentTone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Preview = RouterOutputs["plan"]["preview"];
+type Preview = Pick<RouterOutputs["plan"]["current"], "plan" | "labels">;
 type Plan = Preview["plan"];
 type Labels = Preview["labels"];
 type Item = Plan["items"][number];
@@ -69,7 +69,7 @@ function toRow(item: Item, index: number, labels: Labels, showPerson: boolean): 
         kind: labels.classes[item.classId].name,
         account: describeAccount(item.accountId),
         detail: item.quantity
-          ? `Kup ${item.quantity} szt. ${name}`
+          ? `Kup ${formatQuantity(item.quantity)} ${instrument.type === "GOLD" ? "g" : "szt."} ${name}`
           : `Kup ${name} za kwotę przelewu`,
         amount: formatMoney(money(item.accountAmountMinor, item.currency)),
         amountInBase: item.currency === "PLN" ? null : `≈ ${formatMoney(money(item.amountMinor))}`,
@@ -143,14 +143,24 @@ function rationaleTone(subject: string, labels: Labels): SegmentTone {
   return labels.classes[subject].kind;
 }
 
-export function PlanResult({ plan, labels }: Preview) {
+export function PlanResult({
+  plan,
+  labels,
+  amountLabel,
+  amountHint,
+}: Preview & { amountLabel: string; amountHint?: string }) {
   const showPerson = new Set(Object.values(labels.accounts).map((a) => a.personName)).size > 1;
   const rows = plan.items.map((item, index) => toRow(item, index, labels, showPerson));
 
   return (
-    <div className="flex flex-col gap-10 animate-in fade-in slide-in-from-bottom-1 duration-300">
+    <div className="flex flex-col gap-10">
       <div className="grid gap-8 md:grid-cols-[auto_minmax(0,1fr)] md:gap-12">
-        <Stat label="Nadwyżka" value={formatMoney(money(plan.surplusMinor))} tone="hero" />
+        <Stat
+          label={amountLabel}
+          value={formatMoney(money(plan.surplusMinor))}
+          tone="hero"
+          hint={amountHint}
+        />
         <AllocationStrip
           segments={toSegments(plan, labels)}
           emptyCaption="Nic do rozpisania — cała kwota przechodzi na kolejny miesiąc."

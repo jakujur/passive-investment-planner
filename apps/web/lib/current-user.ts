@@ -1,23 +1,9 @@
 import "server-only";
-import { serverApi } from "./session";
-
-// pnpm installs two @trpc/server copies (different typescript peers), so `instanceof TRPCError` fails.
-function isUnauthorized(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    error.name === "TRPCError" &&
-    "code" in error &&
-    error.code === "UNAUTHORIZED"
-  );
-}
+import { currentSession, serverApi } from "./session";
 
 /** Signed-in user or `null`; unlike `requireUser` it never redirects, so public pages can use it. */
 export async function currentUser() {
+  if (!(await currentSession())) return null;
   const api = await serverApi();
-  try {
-    return await api.household.me();
-  } catch (error) {
-    if (isUnauthorized(error)) return null;
-    throw error;
-  }
+  return api.household.me();
 }

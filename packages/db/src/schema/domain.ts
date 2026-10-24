@@ -49,6 +49,7 @@ export const goalStatus = pgEnum("goal_status", ["ACTIVE", "DONE"]);
 export const planStatus = pgEnum("plan_status", ["DRAFT", "DONE"]);
 export const etfRounding = pgEnum("etf_rounding", ["WHOLE", "FRACTIONAL"]);
 export const accountFill = pgEnum("account_fill", ["EVEN", "SEQUENTIAL"]);
+export const contributionSplit = pgEnum("contribution_split", ["REBALANCE", "WEIGHTS"]);
 export const installmentType = pgEnum("installment_type", ["EQUAL", "DECREASING"]);
 export const overpaymentMode = pgEnum("overpayment_mode", ["SHORTEN", "LOWER_INSTALLMENT"]);
 export const mortgageEntryKind = pgEnum("mortgage_entry_kind", [
@@ -316,6 +317,8 @@ export const settings = pgTable("settings", {
   etfRounding: etfRounding().notNull().default("FRACTIONAL"),
   /** EVEN: every month a share to each tax account at the pace of its yearly limit; SEQUENTIAL: fill one by one. */
   accountFill: accountFill().notNull().default("EVEN"),
+  /** REBALANCE: underweight classes first; WEIGHTS: each contribution split by target weights. */
+  contributionSplit: contributionSplit().notNull().default("REBALANCE"),
 });
 
 export const plan = pgTable(

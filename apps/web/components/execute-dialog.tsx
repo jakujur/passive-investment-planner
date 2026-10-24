@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { formatMonth, formatPln } from "@/lib/format";
+import { formatIsoDate, formatMonth, formatPln, todayIso } from "@/lib/format";
 import { useTRPC } from "@/lib/trpc";
 
 /** "Wykonane": books the month after a confirmation; the same control on the dashboard and the plan page. */
@@ -25,12 +25,15 @@ export function ExecuteDialog({
   month,
   amount,
   adjustmentMinor,
+  date,
   disabled,
   size = "default",
 }: {
   month: string;
   amount: bigint;
   adjustmentMinor: bigint;
+  /** Backdated booking day; omitted = today. */
+  date?: string;
   disabled: boolean;
   size?: "default" | "sm" | "lg";
 }) {
@@ -59,12 +62,13 @@ export function ExecuteDialog({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Zaksięgować {formatMonth(month).toLocaleLowerCase("pl-PL")}?
+              Zaksięgować {formatMonth(month).toLocaleLowerCase("pl-PL")}
+              {date && date !== todayIso() ? ` z datą ${formatIsoDate(date)}` : ""}?
             </AlertDialogTitle>
             <AlertDialogDescription>
               Plan na {formatPln(amount)} zostanie zapisany jako wykonany: wpłaty i zakupy trafią do
-              historii transakcji, a limity IKE/IKZE zostaną zaktualizowane. Tej operacji nie da się
-              cofnąć.
+              historii transakcji z datą wykonania, a limity IKE/IKZE zostaną zaktualizowane.
+              Ostatni zaksięgowany miesiąc możesz później cofnąć.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -72,7 +76,7 @@ export function ExecuteDialog({
             <AlertDialogAction
               onClick={() => {
                 setOpen(false);
-                execute.mutate({ adjustmentMinor });
+                execute.mutate(date ? { adjustmentMinor, date } : { adjustmentMinor });
               }}
             >
               Księguję

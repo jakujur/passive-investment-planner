@@ -93,6 +93,7 @@ function state(overrides: Partial<PlanState> = {}): PlanState {
     acceleratorTable: DEFAULT_ACCELERATOR_TABLE,
     etfRounding: "FRACTIONAL",
     accountFill: "SEQUENTIAL",
+    contributionSplit: "REBALANCE",
     alertMonthsThreshold: 12,
     ...overrides,
   };
@@ -274,6 +275,40 @@ describe("planMonth — rebalancing", () => {
     const bondsAlert = plan.alerts.find((a) => a.type === "OUT_OF_BAND" && a.classId === "bonds");
     expect(bondsAlert).toMatchObject({ monthsToReturn: expect.any(Number) });
     expect(bondsAlert?.type === "OUT_OF_BAND" && (bondsAlert.monthsToReturn ?? 0) > 12).toBe(true);
+  });
+});
+
+describe("planMonth — podział według wag", () => {
+  it("splits by target weights even when equities are far above their share", () => {
+    const plan = planMonth(
+      state({
+        contributionSplit: "WEIGHTS",
+        classes: classes({ equity: 500_000, bonds: 10_000, gold: 1_000 }),
+        equityDrawdownBp: 3000,
+      }),
+      zl(7_500),
+    );
+
+    expect(plan.allocation).toMatchObject({ equity: zl(4_500), bonds: zl(2_500), gold: zl(500) });
+    expect(plan.alerts).toContainEqual(expect.objectContaining({ type: "OUT_OF_BAND" }));
+  });
+
+  it("keeps overpaying the mortgage even when real estate is above its tolerance", () => {
+    const plan = planMonth(
+      state({
+        contributionSplit: "WEIGHTS",
+        classes: classes({ equity: 250_000, bonds: 150_000, realEstate: 550_000, gold: 50_000 }),
+        realEstate: { goal: null, mortgage: { id: "m1", balanceMinor: zl(300_000) } },
+      }),
+      zl(10_000),
+    );
+
+    expect(plan.items).toContainEqual({
+      kind: "OVERPAYMENT",
+      mortgageId: "m1",
+      amountMinor: zl(2_500),
+    });
+    expect(plan.allocation).toMatchObject({ equity: zl(4_500), bonds: zl(2_500), gold: zl(500) });
   });
 });
 

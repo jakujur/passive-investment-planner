@@ -1,5 +1,5 @@
 import { type Db, schema, type Tx } from "@pip/db";
-import { type Plan, type PlanItem, planMonth } from "@pip/engine";
+import { addMonths, type Plan, type PlanItem, planMonth } from "@pip/engine";
 import { RATE_SCALE, sumBig } from "@pip/money";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq } from "drizzle-orm";
@@ -8,13 +8,46 @@ import { z } from "zod";
 import { bondSeries } from "../bonds";
 import { bookMortgages, unbookMortgages } from "../mortgages";
 import { loadPlanContext, type PlanContext } from "../plan-state";
-import { currentMonth, today } from "../time";
+import { today } from "../time";
 import { householdProcedure, router } from "../trpc";
 
 /** This month's correction of the regular contribution; negative when paying in less. */
 const adjustmentInput = z.object({
   adjustmentMinor: z.bigint().min(-1_000_000_000_00n).max(1_000_000_000_00n).default(0n),
+  /** Day the transfers were made; defaults to today. Its month is the month being booked. */
+  date: z.iso.date().optional(),
 });
+
+/**
+ * The booking day and month. Backdating is allowed up to today, but never into or before a
+ * month older than the newest booked one, so the ledger (and undo) stays in order.
+ */
+async function bookingDay(db: Db, householdId: string, requested: string | undefined) {
+  const now = today();
+  const date = requested ?? now;
+  if (date > now) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Data wykonania nie może być z przyszłości.",
+    });
+  }
+  const month = date.slice(0, 7);
+  const [latest] = await db
+    .select({ month: schema.plan.month })
+    .from(schema.plan)
+    .where(and(eq(schema.plan.householdId, householdId), eq(schema.plan.status, "DONE")))
+    .orderBy(desc(schema.plan.month))
+    .limit(1);
+  if (latest && latest.month > month) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Ostatni zaksięgowany miesiąc to ${latest.month} — nie można księgować wcześniejszych.`,
+    });
+  }
+  /** Earliest day a booking may carry: the first day after the newest booked month. */
+  const minDate = latest ? `${addMonths(latest.month, 1)}-01` : null;
+  return { date, month, minDate };
+}
 
 function surplusFor(contributionMinor: bigint, adjustmentMinor: bigint): bigint {
   const surplus = contributionMinor + adjustmentMinor;
@@ -154,11 +187,15 @@ async function unbookItems(tx: Tx, planId: string) {
 }
 
 export const planRouter = router({
-  /** This month's plan: the booked one, or a fresh one for the regular contribution plus `adjustmentMinor`. */
+  /**
+   * The plan of the month of `date` (default today): the booked one, or a fresh one for the
+   * regular contribution plus `adjustmentMinor`, computed as of that day.
+   */
   current: householdProcedure.input(adjustmentInput).query(async ({ ctx, input }) => {
-    const month = currentMonth();
-    const done = await doneMonth(ctx.db, ctx.householdId, month);
+    const requestedMonth = (input.date ?? today()).slice(0, 7);
+    const done = await doneMonth(ctx.db, ctx.householdId, requestedMonth);
     if (done) {
+      const month = requestedMonth;
       return {
         id: done.id,
         month,
@@ -168,9 +205,11 @@ export const planRouter = router({
         adjustmentMinor: done.extraMinor,
         monthlyContributionMinor: done.surplusMinor - done.extraMinor,
         ...readStored(done),
+        minDate: null,
       };
     }
-    const context = await loadPlanContext(ctx.db, ctx.householdId, month);
+    const { date, month, minDate } = await bookingDay(ctx.db, ctx.householdId, input.date);
+    const context = await loadPlanContext(ctx.db, ctx.householdId, month, date);
     const surplusMinor = surplusFor(
       context.settings.monthlyContributionMinor,
       input.adjustmentMinor,
@@ -185,17 +224,18 @@ export const planRouter = router({
       monthlyContributionMinor: context.settings.monthlyContributionMinor,
       plan: planMonth(context.state, surplusMinor),
       labels: context.labels,
-      date: today(),
+      date,
+      minDate,
     };
   }),
 
   /** Books the month: recomputes the plan server-side and turns it into transactions. */
   execute: householdProcedure.input(adjustmentInput).mutation(async ({ ctx, input }) => {
-    const month = currentMonth();
+    const { date, month } = await bookingDay(ctx.db, ctx.householdId, input.date);
     if (await doneMonth(ctx.db, ctx.householdId, month)) {
       throw new TRPCError({ code: "CONFLICT", message: "Ten miesiąc jest już zaksięgowany." });
     }
-    const context = await loadPlanContext(ctx.db, ctx.householdId, month);
+    const context = await loadPlanContext(ctx.db, ctx.householdId, month, date);
     const surplusMinor = surplusFor(
       context.settings.monthlyContributionMinor,
       input.adjustmentMinor,
@@ -207,7 +247,6 @@ export const planRouter = router({
       });
     }
     const plan = planMonth(context.state, surplusMinor);
-    const date = today();
 
     const planId = await ctx.db.transaction(async (tx) => {
       const [row] = await tx

@@ -18,7 +18,7 @@ import {
 import { type Currency, maxBig, RATE_SCALE, sumBig, toBase } from "@pip/money";
 import { ensureFreshMarketData } from "@pip/sources";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import { BOND_NOMINAL_MINOR } from "./bonds";
 import { loadQuotes, priceInBaseAt } from "./market";
 import { today } from "./time";
@@ -63,6 +63,8 @@ export interface PlanContext {
       family: WrapperFamily;
       limitMinor: bigint;
       usedMinor: bigint;
+      /** Part of `usedMinor` paid outside booked plans (opening balance or manual entries). */
+      outsidePlanMinor: bigint;
     }[];
     equityDrawdownBp: number;
   };
@@ -99,9 +101,10 @@ export async function loadPlanContext(
   db: Db,
   householdId: string,
   month: string,
+  /** Day the plan is computed for (quotes, NBP rates); a backdated booking passes its date. */
+  date: string = today(),
 ): Promise<PlanContext> {
   const year = Number(month.slice(0, 4));
-  const date = today();
   await ensureFreshMarketData(db);
   const [settings] = await db
     .select()
@@ -125,12 +128,14 @@ export async function loadPlanContext(
           type: schema.transaction.type,
           date: schema.transaction.date,
           amountMinor: schema.transaction.amountMinor,
+          source: schema.transaction.source,
         })
         .from(schema.transaction)
         .where(inArray(schema.transaction.accountId, accountIds))
     : [];
   const cashBalance = new Map<string, bigint>();
   const contributedThisYear = new Map<string, bigint>();
+  const outsidePlanThisYear = new Map<string, bigint>();
   for (const tx of cashRows) {
     if (tx.type === "BUY") continue;
     cashBalance.set(tx.accountId, (cashBalance.get(tx.accountId) ?? 0n) + tx.amountMinor);
@@ -139,6 +144,12 @@ export async function loadPlanContext(
         tx.accountId,
         (contributedThisYear.get(tx.accountId) ?? 0n) + tx.amountMinor,
       );
+      if (tx.source !== "PLAN") {
+        outsidePlanThisYear.set(
+          tx.accountId,
+          (outsidePlanThisYear.get(tx.accountId) ?? 0n) + tx.amountMinor,
+        );
+      }
     }
   }
 
@@ -165,7 +176,7 @@ export async function loadPlanContext(
   }
 
   const limits = await limitsForYear(db, year);
-  const fx = await latestFxRates(db);
+  const fx = await latestFxRates(db, date);
   const rateFor = (currency: string) => {
     if (currency === "PLN") return RATE_SCALE;
     const rate = fx.get(currency);
@@ -197,6 +208,7 @@ export async function loadPlanContext(
         family,
         limitMinor,
         usedMinor,
+        outsidePlanMinor: outsidePlanThisYear.get(account.id) ?? 0n,
       });
     }
     return {
@@ -318,6 +330,7 @@ export async function loadPlanContext(
     acceleratorTable: settings.acceleratorTable,
     etfRounding: settings.etfRounding,
     accountFill: settings.accountFill,
+    contributionSplit: settings.contributionSplit,
     alertMonthsThreshold: settings.alertMonthsThreshold,
   };
 
@@ -403,13 +416,15 @@ async function limitsForYear(db: Db, year: number): Promise<AnnualLimits> {
   });
 }
 
-export async function latestFxRates(db: Db): Promise<Map<string, bigint>> {
+/** Latest NBP rate per currency published on or before `date`. */
+export async function latestFxRates(db: Db, date: string): Promise<Map<string, bigint>> {
   const rows = await db
     .selectDistinctOn([schema.fxRate.currency], {
       currency: schema.fxRate.currency,
       rate: schema.fxRate.rate,
     })
     .from(schema.fxRate)
+    .where(lte(schema.fxRate.date, date))
     .orderBy(schema.fxRate.currency, desc(schema.fxRate.date));
   return new Map(rows.map((r) => [r.currency, r.rate]));
 }

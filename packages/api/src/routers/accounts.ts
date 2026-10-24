@@ -1,9 +1,11 @@
 import { schema } from "@pip/db";
 import { type Wrapper, wrapperFamily } from "@pip/engine";
+import { formatMoney, money } from "@pip/money";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, sql, sum } from "drizzle-orm";
 import { z } from "zod";
 import { householdAccount, householdAccounts } from "../ownership";
+import { today } from "../time";
 import { householdProcedure, router } from "../trpc";
 
 /** Which account types and platforms each investable class offers. */
@@ -179,6 +181,53 @@ export const accountsRouter = router({
           ikzeEntrepreneur: wrapperFamily(account.wrapper) === "IKZE" && input.ikzeEntrepreneur,
         })
         .where(eq(schema.account.id, account.id));
+    }),
+
+  /**
+   * Sets this year's deposits made outside booked plans into an IKE/IKZE (they use the limit).
+   * Manual deposits stay; the opening-balance deposit is replaced to make up the total.
+   */
+  setOutsidePlanDeposits: householdProcedure
+    .input(z.object({ id: z.uuid(), amountMinor: z.bigint().min(0n).max(1_000_000_000_00n) }))
+    .mutation(async ({ ctx, input }) => {
+      const { account } = await householdAccount(ctx.db, ctx.householdId, input.id);
+      if (!wrapperFamily(account.wrapper)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Wpłaty liczą się do limitu tylko na IKE i IKZE.",
+        });
+      }
+      const date = today();
+      const thisYear = and(
+        eq(schema.transaction.accountId, account.id),
+        eq(schema.transaction.type, "DEPOSIT"),
+        gte(schema.transaction.date, `${date.slice(0, 4)}-01-01`),
+      );
+      const [manual] = await ctx.db
+        .select({ total: sum(schema.transaction.amountMinor) })
+        .from(schema.transaction)
+        .where(and(thisYear, eq(schema.transaction.source, "MANUAL")));
+      const manualMinor = BigInt(manual?.total ?? "0");
+      if (input.amountMinor < manualMinor) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Ręcznie dodane wpłaty w tym roku to już ${formatMoney(money(manualMinor))} — usuń je w transakcjach, by zejść niżej.`,
+        });
+      }
+      await ctx.db.transaction(async (tx) => {
+        await tx
+          .delete(schema.transaction)
+          .where(and(thisYear, eq(schema.transaction.source, "OPENING")));
+        if (input.amountMinor > manualMinor) {
+          await tx.insert(schema.transaction).values({
+            accountId: account.id,
+            date,
+            type: "DEPOSIT",
+            amountMinor: input.amountMinor - manualMinor,
+            source: "OPENING",
+          });
+        }
+      });
     }),
 
   /** Only accounts without history; cushion and down-payment accounts are managed elsewhere. */

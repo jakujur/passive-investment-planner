@@ -14,6 +14,12 @@ export type EtfRounding = "WHOLE" | "FRACTIONAL";
  */
 export type AccountFill = "EVEN" | "SEQUENTIAL";
 
+/**
+ * REBALANCE: new money goes to underweight classes first (the guide's algorithm).
+ * WEIGHTS: every contribution is split by target weights, whatever is already held.
+ */
+export type ContributionSplit = "REBALANCE" | "WEIGHTS";
+
 /** Inclusive weight range in basis points. */
 export interface Band {
   lowerBp: number;
@@ -83,6 +89,7 @@ export interface PlanState {
   acceleratorTable: readonly AcceleratorStep[];
   etfRounding: EtfRounding;
   accountFill: AccountFill;
+  contributionSplit: ContributionSplit;
   alertMonthsThreshold: number;
 }
 

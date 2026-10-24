@@ -44,7 +44,7 @@ export default async function PlanSettingsPage() {
           </Button>
         }
       />
-      <WeightsForm initial={weights} />
+      <WeightsForm initial={weights} monthlyContributionMinor={settings.monthlyContributionMinor} />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <PlanSettingsForm settings={settings} />
         <div className="flex flex-col gap-6">

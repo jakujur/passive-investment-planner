@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { LimitBar } from "@/components/limit-bar";
+import { MoneyInput } from "@/components/money-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -52,7 +53,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { wrapperTag } from "@/lib/classes";
-import { formatPln } from "@/lib/format";
+import { formatPln, moneyToInput, readMoney } from "@/lib/format";
 import { useTRPC } from "@/lib/trpc";
 
 type InvestKind = RouterInputs["accounts"]["create"]["assetKind"];
@@ -438,27 +439,47 @@ function EditAccountDialog({
   const [name, setName] = useState(account.name);
   const [broker, setBroker] = useState(account.broker);
   const [ikzeEntrepreneur, setIkzeEntrepreneur] = useState(account.ikzeEntrepreneur);
+  const outsidePlanMinor = account.limit?.outsidePlanMinor ?? null;
+  const [deposits, setDeposits] = useState(
+    outsidePlanMinor === null ? "" : moneyToInput(outsidePlanMinor),
+  );
   const [error, setError] = useState<string | null>(null);
+  const [depositsError, setDepositsError] = useState<string | null>(null);
   const offered = brokersFor(brokers, account.wrapper);
   // Accounts created from a layout may sit at a platform the class no longer offers; keep it selectable.
   const allowed = offered.includes(account.broker) ? offered : [account.broker, ...offered];
-  const update = useMutation(
-    trpc.accounts.update.mutationOptions({
-      onSuccess: () => {
-        setOpen(false);
-        router.refresh();
-      },
-    }),
-  );
+  const update = useMutation(trpc.accounts.update.mutationOptions());
+  const setOutsidePlan = useMutation(trpc.accounts.setOutsidePlanDeposits.mutationOptions());
+  const pending = update.isPending || setOutsidePlan.isPending;
+  const failure = update.error ?? setOutsidePlan.error;
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (name.trim() === "") {
-      setError("Podaj nazwę.");
+    const depositsMinor = outsidePlanMinor === null ? null : readMoney(deposits || "0");
+    setError(name.trim() === "" ? "Podaj nazwę." : null);
+    setDepositsError(
+      depositsMinor !== null && depositsMinor < 0n
+        ? "Kwota nie może być ujemna."
+        : outsidePlanMinor !== null && depositsMinor === null
+          ? "Wpisz kwotę, np. 5000 albo 5 000,50."
+          : null,
+    );
+    if (
+      name.trim() === "" ||
+      (outsidePlanMinor !== null && (depositsMinor === null || depositsMinor < 0n))
+    )
+      return;
+    try {
+      await update.mutateAsync({ id: account.id, name: name.trim(), broker, ikzeEntrepreneur });
+      if (depositsMinor !== null && depositsMinor !== outsidePlanMinor) {
+        await setOutsidePlan.mutateAsync({ id: account.id, amountMinor: depositsMinor });
+      }
+      setOpen(false);
+      router.refresh();
+    } catch {
+      // The failed mutation's message is rendered from `failure` below.
       return;
     }
-    setError(null);
-    update.mutate({ id: account.id, name: name.trim(), broker, ikzeEntrepreneur });
   }
 
   return (
@@ -466,7 +487,14 @@ function EditAccountDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) update.reset();
+        if (next) {
+          // The dialog stays mounted across refreshes; start from the saved values.
+          setDeposits(outsidePlanMinor === null ? "" : moneyToInput(outsidePlanMinor));
+          setDepositsError(null);
+        } else {
+          update.reset();
+          setOutsidePlan.reset();
+        }
       }}
     >
       <DialogTrigger
@@ -525,17 +553,35 @@ function EditAccountDialog({
                 </FieldContent>
               </Field>
             )}
+            {outsidePlanMinor !== null && (
+              <Field data-invalid={depositsError ? true : undefined}>
+                <FieldLabel htmlFor={`acc-${account.id}-deposits`}>
+                  Wpłaty spoza planu w tym roku
+                </FieldLabel>
+                <MoneyInput
+                  id={`acc-${account.id}-deposits`}
+                  value={deposits}
+                  onChange={setDeposits}
+                  aria-invalid={depositsError ? true : undefined}
+                />
+                <FieldDescription>
+                  Łącznie, np. wpłaty sprzed korzystania z aplikacji. Liczą się do rocznego limitu
+                  obok wpłat z zaksięgowanych miesięcy; nowa kwota zastępuje poprzednią.
+                </FieldDescription>
+                <FieldError>{depositsError}</FieldError>
+              </Field>
+            )}
           </FieldGroup>
-          {update.isError && (
+          {failure && (
             <Alert variant="destructive">
               <AlertTitle>Nie udało się zapisać</AlertTitle>
-              <AlertDescription>{update.error.message}</AlertDescription>
+              <AlertDescription>{failure.message}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Anuluj</DialogClose>
-            <Button type="submit" disabled={update.isPending}>
-              {update.isPending && <Spinner />}
+            <Button type="submit" disabled={pending}>
+              {pending && <Spinner />}
               Zapisz
             </Button>
           </DialogFooter>

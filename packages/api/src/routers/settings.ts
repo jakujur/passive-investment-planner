@@ -39,6 +39,7 @@ export const settingsRouter = router({
       alertMonthsThreshold: settings.alertMonthsThreshold,
       etfRounding: settings.etfRounding,
       accountFill: settings.accountFill,
+      contributionSplit: settings.contributionSplit,
       acceleratorTable: settings.acceleratorTable,
       classes: classes.map((c) => ({
         kind: c.kind,
@@ -76,6 +77,7 @@ export const settingsRouter = router({
         alertMonthsThreshold: z.int().min(1).max(120),
         etfRounding: z.enum(["WHOLE", "FRACTIONAL"]),
         accountFill: z.enum(["EVEN", "SEQUENTIAL"]),
+        contributionSplit: z.enum(["REBALANCE", "WEIGHTS"]),
       }),
     )
     .mutation(async ({ ctx, input }) => {

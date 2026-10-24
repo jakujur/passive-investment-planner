@@ -12,6 +12,7 @@ import { PlanLedger } from "@/components/plan-ledger";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { UndoMonthDialog } from "@/components/undo-month-dialog";
@@ -47,6 +48,8 @@ export function PlanView({ initial }: { initial: Current }) {
   const [amountRaw, setAmountRaw] = useState(moneyToInput(contribution));
   const [amountError, setAmountError] = useState<string | null>(null);
   const [queriedAdjustment, setQueriedAdjustment] = useState(0n);
+  /** Day the transfers were made; a past day recomputes the plan with that day's quotes. */
+  const [date, setDate] = useState(initial.date);
   const adjustment = amountMinor - contribution;
 
   useEffect(() => {
@@ -56,16 +59,22 @@ export function PlanView({ initial }: { initial: Current }) {
 
   const current = useQuery(
     trpc.plan.current.queryOptions(
-      { adjustmentMinor: queriedAdjustment },
+      date === initial.date
+        ? { adjustmentMinor: queriedAdjustment }
+        : { adjustmentMinor: queriedAdjustment, date },
       {
-        initialData: queriedAdjustment === 0n ? initial : undefined,
+        initialData: queriedAdjustment === 0n && date === initial.date ? initial : undefined,
         placeholderData: keepPreviousData,
       },
     ),
   );
 
   const data = current.data;
-  if (!data) return null;
+  if (!data) {
+    return current.isError ? (
+      <BookingDateError message={current.error.message} onReset={() => setDate(initial.date)} />
+    ) : null;
+  }
   const done = data.status === "DONE";
   const maxZl = sliderMaxZl(contribution);
   const sliderZl = Math.max(0, Math.min(maxZl, Math.round(Number(amountMinor) / 100)));
@@ -228,7 +237,13 @@ export function PlanView({ initial }: { initial: Current }) {
             className={cn("transition-opacity", current.isPlaceholderData && "opacity-60")}
           />
 
-          {done && data.id !== null && (
+          {done && date !== initial.date && (
+            <BookingDateError
+              message={`${formatMonth(data.month)} jest już zaksięgowany — wybierz dzień z późniejszego miesiąca.`}
+              onReset={() => setDate(initial.date)}
+            />
+          )}
+          {done && date === initial.date && data.id !== null && (
             <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 Pomyłka? Cofnij księgowanie i zaksięguj miesiąc jeszcze raz; kwoty poprawisz w
@@ -238,20 +253,54 @@ export function PlanView({ initial }: { initial: Current }) {
             </div>
           )}
           {!done && (
-            <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end sm:justify-between">
               <p className="text-sm text-muted-foreground">
-                Po wykonaniu przelewów zaksięguj miesiąc — wpłaty i zakupy trafią do historii.
+                Po wykonaniu przelewów zaksięguj miesiąc — wpłaty i zakupy trafią do historii z datą
+                wykonania. Przelewy były wcześniej? Ustaw ich dzień — plan przeliczy ilości wg kursu
+                z tego dnia.
               </p>
-              <ExecuteDialog
-                month={data.month}
-                amount={data.surplusMinor}
-                adjustmentMinor={queriedAdjustment}
-                disabled={data.surplusMinor === 0n || stale || amountError !== null}
-              />
+              <div className="flex items-end gap-3">
+                <Field className="w-40 gap-1">
+                  <FieldLabel htmlFor="booking-date">Data wykonania</FieldLabel>
+                  <Input
+                    id="booking-date"
+                    type="date"
+                    value={date}
+                    min={data.minDate ?? undefined}
+                    max={initial.date}
+                    onChange={(e) => {
+                      if (e.target.value) setDate(e.target.value);
+                    }}
+                    className="tabular-nums"
+                  />
+                </Field>
+                <ExecuteDialog
+                  month={data.month}
+                  amount={data.surplusMinor}
+                  adjustmentMinor={queriedAdjustment}
+                  date={date}
+                  disabled={data.surplusMinor === 0n || stale || amountError !== null}
+                />
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
     </>
+  );
+}
+
+function BookingDateError({ message, onReset }: { message: string; onReset: () => void }) {
+  return (
+    <Card size="sm">
+      <CardContent className="flex flex-col items-start gap-3">
+        <p role="alert" className="text-sm text-destructive">
+          {message}
+        </p>
+        <Button variant="outline" size="sm" onClick={onReset}>
+          Wróć do dzisiejszej daty
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

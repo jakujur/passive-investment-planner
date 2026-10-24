@@ -38,6 +38,7 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
   const items: PlanItem[] = [];
   const rationale: Rationale[] = [];
   const alerts: Alert[] = [];
+  const rebalance = state.contributionSplit === "REBALANCE";
 
   const realEstate = state.classes.find((c) => c.kind === "REAL_ESTATE");
   const investClasses = state.classes.filter((c) => c.kind !== "REAL_ESTATE");
@@ -82,7 +83,7 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
         toRealEstate === stream
           ? `${pct(realEstate.targetWeightBp)} nadwyżki (${pln(stream)}) idzie na wkład własny, poza rebalancingiem.`
           : `Do wkładu własnego brakuje ${pln(goal.remainingMinor)}; reszta strumienia nieruchomości wraca do puli.`;
-    } else if (mortgage && band && currentBp > band.upperBp) {
+    } else if (rebalance && mortgage && band && currentBp > band.upperBp) {
       text = `Nieruchomości mają ${pct(currentBp)} przy górnej granicy pasma ${pct(band.upperBp)}, więc nadpłata czeka, a ${pln(stream)} wraca do puli.`;
     } else if (mortgage) {
       toRealEstate = minBig(stream, mortgage.balanceMinor);
@@ -98,8 +99,9 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
     rationale.push({ subject: "REAL_ESTATE", text });
   }
 
-  // 3. Split the pool: deficits against post-deposit targets first, any rest by weight
-  const shares = splitPool(investClasses, pool);
+  // 3. Split the pool: deficits against post-deposit targets first (any rest by weight),
+  //    or purely by weight when the household chose not to rebalance with new money.
+  const shares = rebalance ? splitPool(investClasses, pool) : splitByWeight(investClasses, pool);
 
   // 4. Accelerator
   const equityShare = shares.find((s) => s.cls.kind === "EQUITY");
@@ -111,9 +113,9 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
     equityBand !== undefined &&
     bandTotal > 0n &&
     weightBp(equityShare.cls.valueMinor, bandTotal) >= equityBand.upperBp;
-  if (equityAtUpperBand && multiplierBp > 10_000) {
+  if (rebalance && equityAtUpperBand && multiplierBp > 10_000) {
     acceleratorNote = ` Accelerator wstrzymany: akcje są na górnej granicy pasma ${pct(equityBand.upperBp)}.`;
-  } else if (equityShare && equityBand && multiplierBp > 10_000 && pool > 0n) {
+  } else if (rebalance && equityShare && equityBand && multiplierBp > 10_000 && pool > 0n) {
     const weightSum = BigInt(investClasses.reduce((acc, c) => acc + c.targetWeightBp, 0));
     const base = (pool * BigInt(equityShare.cls.targetWeightBp)) / weightSum;
     const boosted = (base * BigInt(multiplierBp)) / BP_SCALE;
@@ -146,8 +148,9 @@ export function planMonth(state: PlanState, surplusMinor: bigint): Plan {
         bandTotal === 0n
           ? "portfel startuje"
           : `${pct(weightBp(cls.valueMinor, bandTotal))} przy celu ${pct(bandWeights.get(cls.id) ?? 0)}`;
-      const text =
-        amount > 0n
+      const text = !rebalance
+        ? `${cls.name}: według wagi ${pct(bandWeights.get(cls.id) ?? 0)} → ${pln(amount)} (obecnie ${position}).`
+        : amount > 0n
           ? `${cls.name}: ${position} → ${pln(amount)}.`
           : `${cls.name}: ${position} — w tym miesiącu bez wpłat, inne klasy są bardziej niedoważone.`;
       rationale.push({
@@ -330,6 +333,14 @@ function fillEvenly(
     }),
     left: rest.left,
   };
+}
+
+function splitByWeight(classes: readonly ClassState[], pool: bigint): Share[] {
+  const parts = allocate(
+    maxBig(0n, pool),
+    classes.map((c) => BigInt(c.targetWeightBp)),
+  );
+  return classes.map((cls, i) => ({ cls, amount: parts[i] ?? 0n }));
 }
 
 function splitPool(classes: readonly ClassState[], pool: bigint): Share[] {

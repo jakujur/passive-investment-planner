@@ -41,6 +41,7 @@ interface Draft {
   alertMonths: string;
   etfRounding: Settings["etfRounding"];
   accountFill: Settings["accountFill"];
+  contributionSplit: Settings["contributionSplit"];
 }
 type Errors = Partial<Record<keyof Draft, string>>;
 
@@ -61,6 +62,7 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
     alertMonths: String(settings.alertMonthsThreshold),
     etfRounding: settings.etfRounding,
     accountFill: settings.accountFill,
+    contributionSplit: settings.contributionSplit,
   });
   const [errors, setErrors] = useState<Errors>({});
   const [saved, setSaved] = useState(false);
@@ -112,11 +114,60 @@ export function PlanSettingsForm({ settings }: { settings: Settings }) {
       alertMonthsThreshold: alertMonths,
       etfRounding: draft.etfRounding,
       accountFill: draft.accountFill,
+      contributionSplit: draft.contributionSplit,
     });
   }
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Podział wpłaty między klasy</CardTitle>
+          <CardDescription>
+            Czy nowe pieniądze mają wyrównywać proporcje portfela, czy po prostu trzymać się wag.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            aria-label="Podział wpłaty między klasy"
+            value={draft.contributionSplit}
+            onValueChange={(value: unknown) => {
+              if (value === "REBALANCE" || value === "WEIGHTS") set("contributionSplit", value);
+            }}
+            className="sm:grid-cols-2"
+          >
+            <FieldLabel htmlFor="s-split-rebalance">
+              <Field orientation="horizontal">
+                <RadioGroupItem value="REBALANCE" id="s-split-rebalance" />
+                <FieldContent>
+                  <span className="text-sm font-normal normal-case tracking-normal">
+                    Z rebalancingiem
+                  </span>
+                  <FieldDescription>
+                    Najpierw dopłaca klasy poniżej wagi, aż portfel wróci do proporcji (algorytm z
+                    poradnika, z acceleratorem po spadkach).
+                  </FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldLabel>
+            <FieldLabel htmlFor="s-split-weights">
+              <Field orientation="horizontal">
+                <RadioGroupItem value="WEIGHTS" id="s-split-weights" />
+                <FieldContent>
+                  <span className="text-sm font-normal normal-case tracking-normal">
+                    Według wag
+                  </span>
+                  <FieldDescription>
+                    Każda wpłata dzieli się dokładnie według wag, bez względu na to, co już masz.
+                    Odchylenia od tolerancji pokazujemy tylko jako informację.
+                  </FieldDescription>
+                </FieldContent>
+              </Field>
+            </FieldLabel>
+          </RadioGroup>
+        </CardContent>
+      </Card>
+
       <Card size="sm">
         <CardHeader>
           <CardTitle>Rozkład zakupów na konta</CardTitle>

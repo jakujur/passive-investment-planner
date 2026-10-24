@@ -1,6 +1,7 @@
 "use client";
 
 import { type AssetClassKind, bandFor } from "@pip/engine";
+import { shareBp } from "@pip/money";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
@@ -12,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { CLASS_ORDER, CLASSES } from "@/lib/classes";
-import { bpToInput, formatBand, formatBp, readPercentBp } from "@/lib/format";
+import { bpToInput, formatBand, formatBp, formatPln, readPercentBp } from "@/lib/format";
 import { useTRPC } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
@@ -22,34 +23,14 @@ export interface ClassWeight {
 }
 type Weights = Record<AssetClassKind, number>;
 type Tolerances = Record<AssetClassKind, string>;
+type WeightDrafts = Record<AssetClassKind, string>;
 
 const TOTAL_BP = 10_000;
-const STEP_BP = 50;
+/** Slider step 0,1%; the exact field accepts two decimals (0,01% = 1 bp). */
+const SLIDER_STEP_BP = 10;
 
 function perClass<T>(f: (kind: AssetClassKind) => T): Record<AssetClassKind, T> {
   return { EQUITY: f("EQUITY"), BONDS: f("BONDS"), REAL_ESTATE: f("REAL_ESTATE"), GOLD: f("GOLD") };
-}
-
-/** Sets one class and rescales the others proportionally so the sum stays at 100%. */
-function rebalance(weights: Weights, changed: AssetClassKind, valueBp: number): Weights {
-  const value = Math.max(0, Math.min(TOTAL_BP, valueBp));
-  const others = CLASS_ORDER.filter((k) => k !== changed);
-  const othersTotal = others.reduce((sum, k) => sum + weights[k], 0);
-  const remaining = TOTAL_BP - value;
-  const next: Weights = { ...weights, [changed]: value };
-  let assigned = 0;
-  for (const k of others) {
-    const share =
-      othersTotal === 0 ? remaining / others.length : (weights[k] * remaining) / othersTotal;
-    next[k] = Math.round(share / STEP_BP) * STEP_BP;
-    assigned += next[k];
-  }
-  const drift = remaining - assigned;
-  if (drift !== 0) {
-    const largest = others.reduce((a, b) => (next[a] >= next[b] ? a : b));
-    next[largest] = Math.max(0, next[largest] + drift);
-  }
-  return next;
 }
 
 /** Default ± half-width the engine applies when no tolerance is set. */
@@ -74,7 +55,13 @@ const SLIDER_TONE: Record<AssetClassKind, string> = {
   GOLD: "[&_[data-slot=slider-range]]:bg-class-gold [&_[data-slot=slider-thumb]]:bg-class-gold",
 };
 
-export function WeightsForm({ initial }: { initial: Record<AssetClassKind, ClassWeight> }) {
+export function WeightsForm({
+  initial,
+  monthlyContributionMinor,
+}: {
+  initial: Record<AssetClassKind, ClassWeight>;
+  monthlyContributionMinor: bigint;
+}) {
   const trpc = useTRPC();
   const router = useRouter();
   const [weights, setWeights] = useState<Weights>(() => perClass((k) => initial[k].weightBp));
@@ -84,7 +71,28 @@ export function WeightsForm({ initial }: { initial: Record<AssetClassKind, Class
       return tolerance === null ? "" : bpToInput(tolerance);
     }),
   );
+  /** Text in the exact weight fields; committed on blur or Enter. */
+  const [weightDrafts, setWeightDrafts] = useState<WeightDrafts>(() =>
+    perClass((k) => bpToInput(initial[k].weightBp)),
+  );
   const [saved, setSaved] = useState(false);
+
+  /** Each weight is independent; the sum has to reach 100% before saving. */
+  function applyWeight(kind: AssetClassKind, valueBp: number) {
+    setSaved(false);
+    const value = Math.max(0, Math.min(TOTAL_BP, Math.round(valueBp)));
+    setWeights((w) => ({ ...w, [kind]: value }));
+    setWeightDrafts((d) => ({ ...d, [kind]: bpToInput(value) }));
+  }
+
+  function commitDraft(kind: AssetClassKind) {
+    const bp = readPercentBp(weightDrafts[kind]);
+    if (bp === null || bp < 0 || bp > TOTAL_BP) {
+      setWeightDrafts((d) => ({ ...d, [kind]: bpToInput(weights[kind]) }));
+      return;
+    }
+    if (bp !== weights[kind]) applyWeight(kind, bp);
+  }
   const update = useMutation(
     trpc.settings.updateWeights.mutationOptions({
       onSuccess: () => {
@@ -112,9 +120,9 @@ export function WeightsForm({ initial }: { initial: Record<AssetClassKind, Class
         <CardHeader>
           <CardTitle>Wagi i tolerancja udziału</CardTitle>
           <CardDescription>
-            Przesunięcie jednej wagi rozkłada różnicę na pozostałe — suma zawsze 100%. Tolerancja to
-            dopuszczalne odchylenie udziału w pp; puste pole = domyślne ±5 pp (klasy od 20%) albo
-            ±25% wagi.
+            Każdą wagę ustawiasz osobno; zapis wymaga sumy 100%. Kwota obok to miesięczna część
+            stałej wpłaty przy pełnej poduszce i portfelu w celu. Tolerancja to dopuszczalne
+            odchylenie udziału w pp; puste pole = domyślne ±5 pp (klasy od 20%) albo ±25% wagi.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -127,7 +135,7 @@ export function WeightsForm({ initial }: { initial: Record<AssetClassKind, Class
               />
             ))}
           </div>
-          <div className="grid gap-5 md:grid-cols-2 md:gap-x-10">
+          <div className="flex flex-col divide-y divide-border">
             {CLASS_ORDER.map((k) => {
               const tolerance = parsed[k];
               const range = bandFor(
@@ -135,58 +143,73 @@ export function WeightsForm({ initial }: { initial: Record<AssetClassKind, Class
                 tolerance === null || tolerance === undefined ? {} : { bandAbsBp: tolerance },
               );
               return (
-                <div key={k} className="flex flex-col gap-2">
-                  <div className="flex items-baseline justify-between">
-                    <Label htmlFor={`weight-${k}`} className="gap-2">
-                      <span aria-hidden className={cn("size-2.5", CLASSES[k].bg)} />
-                      {CLASSES[k].name}
-                    </Label>
-                    <span className="font-heading text-xl tabular-nums">
-                      {formatBp(weights[k])}
-                    </span>
-                  </div>
-                  <div className="grid items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                    <Slider
-                      id={`weight-${k}`}
-                      aria-label={`Waga: ${CLASSES[k].name}`}
-                      min={0}
-                      max={TOTAL_BP}
-                      step={STEP_BP}
-                      value={[weights[k]]}
-                      onValueChange={(value) => {
-                        const next = Array.isArray(value) ? value[0] : value;
-                        if (next === undefined) return;
-                        setSaved(false);
-                        setWeights((w) => rebalance(w, k, next));
+                <div
+                  key={k}
+                  className="grid items-center gap-x-6 gap-y-3 py-4 first:pt-0 last:pb-0 md:grid-cols-[9rem_minmax(0,1fr)_auto_7rem_auto]"
+                >
+                  <Label htmlFor={`weight-${k}`} className="gap-2">
+                    <span aria-hidden className={cn("size-2.5", CLASSES[k].bg)} />
+                    {CLASSES[k].name}
+                  </Label>
+                  <Slider
+                    id={`weight-${k}`}
+                    aria-label={`Waga: ${CLASSES[k].name}`}
+                    min={0}
+                    max={TOTAL_BP}
+                    step={SLIDER_STEP_BP}
+                    value={[weights[k]]}
+                    onValueChange={(value) => {
+                      const next = Array.isArray(value) ? value[0] : value;
+                      if (next === undefined) return;
+                      applyWeight(k, next);
+                    }}
+                    className={SLIDER_TONE[k]}
+                  />
+                  <InputGroup className="w-28">
+                    <InputGroupInput
+                      aria-label={`Waga w procentach: ${CLASSES[k].name}`}
+                      inputMode="decimal"
+                      value={weightDrafts[k]}
+                      onChange={(e) => setWeightDrafts((d) => ({ ...d, [k]: e.target.value }))}
+                      onBlur={() => commitDraft(k)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitDraft(k);
+                        }
                       }}
-                      className={SLIDER_TONE[k]}
+                      className="text-right font-medium tabular-nums"
                     />
-                    <div className="flex items-center gap-3">
-                      <InputGroup className="w-32" data-invalid={tolerance === undefined}>
-                        <InputGroupAddon align="inline-start">±</InputGroupAddon>
-                        <InputGroupInput
-                          aria-label={`Tolerancja udziału: ${CLASSES[k].name}`}
-                          inputMode="decimal"
-                          value={tolerances[k]}
-                          onChange={(e) => {
-                            setSaved(false);
-                            setTolerances((t) => ({ ...t, [k]: e.target.value }));
-                          }}
-                          placeholder={bpToInput(defaultToleranceBp(weights[k]))}
-                          aria-invalid={tolerance === undefined ? true : undefined}
-                          className="tabular-nums"
-                        />
-                        <InputGroupAddon align="inline-end">pp</InputGroupAddon>
-                      </InputGroup>
-                      <span
-                        className={cn(
-                          "w-24 text-sm tabular-nums",
-                          tolerance === undefined ? "text-destructive" : "text-muted-foreground",
-                        )}
-                      >
-                        {tolerance === undefined ? "0–50 pp" : formatBand(range)}
-                      </span>
-                    </div>
+                    <InputGroupAddon align="inline-end">%</InputGroupAddon>
+                  </InputGroup>
+                  <span className="text-sm text-muted-foreground tabular-nums md:text-right">
+                    ≈ {formatPln(shareBp(monthlyContributionMinor, weights[k]))}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <InputGroup className="w-32" data-invalid={tolerance === undefined}>
+                      <InputGroupAddon align="inline-start">±</InputGroupAddon>
+                      <InputGroupInput
+                        aria-label={`Tolerancja udziału: ${CLASSES[k].name}`}
+                        inputMode="decimal"
+                        value={tolerances[k]}
+                        onChange={(e) => {
+                          setSaved(false);
+                          setTolerances((t) => ({ ...t, [k]: e.target.value }));
+                        }}
+                        placeholder={bpToInput(defaultToleranceBp(weights[k]))}
+                        aria-invalid={tolerance === undefined ? true : undefined}
+                        className="tabular-nums"
+                      />
+                      <InputGroupAddon align="inline-end">pp</InputGroupAddon>
+                    </InputGroup>
+                    <span
+                      className={cn(
+                        "w-24 text-sm tabular-nums",
+                        tolerance === undefined ? "text-destructive" : "text-muted-foreground",
+                      )}
+                    >
+                      {tolerance === undefined ? "0–50 pp" : formatBand(range)}
+                    </span>
                   </div>
                 </div>
               );
@@ -205,7 +228,9 @@ export function WeightsForm({ initial }: { initial: Record<AssetClassKind, Class
                 total === TOTAL_BP ? "text-muted-foreground" : "text-destructive",
               )}
             >
-              Suma {formatBp(total)}
+              Suma {formatBp(total, 2)}
+              {total < TOTAL_BP && ` · brakuje ${formatBp(TOTAL_BP - total, 2)}`}
+              {total > TOTAL_BP && ` · za dużo o ${formatBp(total - TOTAL_BP, 2)}`}
             </span>
             <div className="flex items-center gap-4">
               {saved && !update.isPending && (

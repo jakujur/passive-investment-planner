@@ -1,0 +1,2 @@
+CREATE TYPE "public"."contribution_split" AS ENUM('REBALANCE', 'WEIGHTS');--> statement-breakpoint
+ALTER TABLE "settings" ADD COLUMN "contribution_split" "contribution_split" DEFAULT 'REBALANCE' NOT NULL;
